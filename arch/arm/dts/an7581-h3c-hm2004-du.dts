@@ -1,0 +1,120 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/dts-v1/;
+
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/gpio/gpio.h>
+#include "an7581.dtsi"
+
+/ {
+	model = "H3C HM2004-DU";
+	compatible = "h3c,hm2004-du",
+		     "airoha,an7581",
+		     "airoha,en7581";
+
+	aliases {
+		serial0 = &uart1;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+		linux,usable-memory-range = <0x0 0x80200000 0x0 0x1fe00000>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x20000000>;
+	};
+
+	keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			gpios = <&pinctrl 0 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+
+		wps {
+			label = "wps";
+			linux,code = <KEY_WPS_BUTTON>;
+			gpios = <&pinctrl 16 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led-0 {
+			label = "green:power";
+			gpios = <&pinctrl 17 GPIO_ACTIVE_LOW>;
+		};
+
+		led-1 {
+			label = "green:pon";
+			gpios = <&pinctrl 18 GPIO_ACTIVE_LOW>;
+		};
+
+		led-2 {
+			label = "red:pon";
+			gpios = <&pinctrl 19 GPIO_ACTIVE_LOW>;
+		};
+
+		led-3 {
+			label = "green:internet";
+			gpios = <&pinctrl 20 GPIO_ACTIVE_LOW>;
+		};
+
+		led-4 {
+			label = "green:wlan";
+			gpios = <&pinctrl 15 GPIO_ACTIVE_LOW>;
+		};
+
+		led-5 {
+			label = "green:usb";
+			gpios = <&pinctrl 34 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+/*
+ * The stock flash is SPI-NAND driven by the SNFI (SPI2NFI) engine, so &nand
+ * keeps its default disabled state from an7581.dtsi: both nodes drive the
+ * same NFI block and only one of them may be enabled.
+ */
+&snfi {
+	status = "okay";
+};
+
+&spi_nand {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/* BootROM reads the BL2 FIP at offset 0x800 in the first eraseblock. */
+		partition@0 {
+			label = "bl2";
+			reg = <0x0 0x20000>;
+		};
+
+		/* UBI manages every eraseblock after BL2. */
+		partition@20000 {
+			label = "ubi";
+			reg = <0x20000 0x000000>;
+		};
+	};
+};
+
+&i2c0 {
+	status = "okay";
+};
+
+&eth {
+	status = "okay";
+};
+
+&gdm1 {
+	status = "okay";
+};
