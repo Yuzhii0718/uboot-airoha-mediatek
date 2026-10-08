@@ -99,11 +99,29 @@ BUILD_LEGACY := $(CONFIG_AIROHA_BUILD_LEGACY)
 LEGACY_BL1   := $(CONFIG_AIROHA_LEGACY_BL1)
 
 # ---- LZMA tool detection ------------------------------------------------
-# Prefer the older lzma (LZMA SDK) encoder over xz.
+# One entry point for every LZMA encoder: tools/lzma_wrapper.sh uses the system
+# LZMA SDK encoder when the host has one (that is what the released images were
+# built with - Debian and Ubuntu ship it in the 'lzma' package as /usr/bin/lzmp,
+# registered as the /usr/bin/lzma alternative with priority 30, ahead of xz's
+# 20), then the in-tree SDK 4.32 encoder built from tools/lzma432, then xz.  It
+# also leaves the real uncompressed size in the LZMA-Alone header, which is what
+# BL2 requires ("Failed to decompress image (err=1)" otherwise).  The plain
+# detection after it is the fallback for a tree without the wrapper.
+LZMA_WRAPPER ?= ../lzma_wrapper.sh
 LZMA_E := $(shell \
-	if command -v lzma >/dev/null 2>&1; then echo "lzma -c"; \
+	if [ -x "$(LZMA_WRAPPER)" ]; then echo "$(LZMA_WRAPPER) -c"; \
+	elif command -v lzma >/dev/null 2>&1; then echo "lzma -c"; \
 	elif command -v xz >/dev/null 2>&1; then echo "xz --format=lzma --stdout"; fi \
 )
+
+# In-tree legacy LZMA SDK encoder (LZMA SDK 4.32, sources in tools/lzma432), the
+# fallback for a host without an LZMA SDK of its own: building it here means no
+# build machine needs the 'lzma' package, and it works on every architecture
+# (the 4.32 encoder produces the same "size + no end marker" stream the vendor
+# blobs use, which xz cannot).
+LZMA_SDK_BIN := lzma-sdk
+LZMA_SDK_DIR := ../lzma432/7zip/Compress/LZMA_Alone
+LZMA_VERIFY ?= ../airoha_verify_lzma.py
 
 # ---- BL31 / U-Boot path setup -------------------------------------------
 # BL31 is always pre-compressed (bl31.lzma); u-boot.bin is always
@@ -167,13 +185,43 @@ $(FIPTOOL):
 	@echo "  [FIP]    Building fiptool (host compiler)..."
 	$(MAKE) -C ../fiptool_src CC=$(HOSTCC) ARCH_AIROHA=$(CONFIG_ARCH_AIROHA)
 
+# ----- in-tree LZMA SDK encoder -------------------------------------------
+# The LZMA SDK 4.32 sources are from 2005 and trip a pile of harmless warnings
+# on a modern g++ (-Wmisleading-indentation, -Wformat-security, ...), hence -w.
+# Building it is best effort on purpose: a host that already has the 'lzma'
+# package never uses it, and a host without a C++ compiler must still build -
+# the wrapper then falls back to the system encoder or xz.
+# 'make lzma-sdk' builds it on demand; the SDK's own makefile is used in place
+# and cleaned again afterwards, so only this single binary is left behind.
+$(LZMA_SDK_BIN):
+	@echo "  [LZMA]   Building the in-tree LZMA SDK encoder (SDK 4.32)..."
+	@if $(MAKE) -C $(LZMA_SDK_DIR) -f makefile.gcc \
+			CXX="g++ -O2 -w" CXX_C="gcc -O2 -w" >/dev/null 2>&1; then \
+		cp -f $(LZMA_SDK_DIR)/lzma $@; \
+		$(MAKE) -C $(LZMA_SDK_DIR) -f makefile.gcc clean >/dev/null 2>&1 || true; \
+	else \
+		echo "  [LZMA]   WARNING: cannot build $@ (no C++ compiler?) - the"; \
+		echo "  [LZMA]            wrapper will use the system 'lzma' or xz"; \
+	fi
+
 # ----- LZMA compression targets -------------------------------------------
 # u-boot.bin is built by the main U-Boot Makefile, not by us.
-$(UBOOT_BIN).lzma:
+#
+# Bytes 5..12 of the LZMA-Alone header declare the uncompressed size and the
+# BL2 (preloader) decompressor requires the *real* value: xz-family encoders
+# write -1 ("unknown size") there and BL2 then aborts the boot with
+# "Failed to decompress image (err=1)" / "Stored BL31 + U-Boot FIP failed".
+# tools/lzma_wrapper.sh already guarantees it for every encoder, and
+# $(LZMA_VERIFY) is the independent last word: it repairs a header that still
+# carries something else (bare-tool fallback, a foreign image, ...), then
+# decodes the payload with BL2's semantics and compares it byte for byte with
+# u-boot.bin - a stream that fails that check never reaches the FIP.
+$(UBOOT_BIN).lzma: $(LZMA_SDK_BIN)
 	@test -f $(UBOOT_BIN) || { echo "ERROR: $(UBOOT_BIN) not found (build u-boot.bin first)"; exit 1; }
+	@if [ -x "$(LZMA_WRAPPER)" ]; then $(LZMA_WRAPPER) --version 2>&1 | sed 's/^/  [LZMA]   /'; fi
 	@echo "  [LZMA]   Compressing u-boot.bin -> u-boot.bin.lzma..."
 	$(LZMA_E) $(UBOOT_BIN) > $@
-	@python3 -c "import struct,os; p='$@'; s='$(UBOOT_BIN)'; d=open(p,'rb').read(); n=struct.pack('<Q',os.path.getsize(s)); open(p,'wb').write(d[:5]+n+d[13:]) if d[5:13]!=b'\xff'*8 and d[5:13]!=n else None"
+	@python3 $(LZMA_VERIFY) --repair --expect $(UBOOT_BIN) $@
 
 # ----- preloader.bin (standalone BL2 FIP) ------------------------------------
 # Built for both boot image layouts (modern/split and legacy/512 KiB) and

@@ -93,6 +93,20 @@ jobs:
       #    - zstd                    : mtmips/econet fetch an OpenWrt .tar.zst
       #    - nodejs/npm              : airoha.sh/mediatek.sh embed the failsafe UI
       #    - device-tree-compiler    : U-Boot and TF-A device trees
+      #    - lzma / lzma-dev         : legacy LZMA SDK 9.22 encoder.  tools/
+      #                                build_airoha compresses u-boot.bin with
+      #                                `lzma -c`; Debian/Ubuntu ship the SDK as
+      #                                /usr/bin/lzmp and register it as the
+      #                                /usr/bin/lzma alternative (priority 30,
+      #                                ahead of xz-utils' 20).  Without the
+      #                                package `command -v lzma` resolves to xz,
+      #                                which writes -1 ("unknown size") into the
+      #                                LZMA-Alone header - BL2 rejects that with
+      #                                "Failed to decompress image (err=1)" and
+      #                                the FIP never boots.  The Makefile
+      #                                normalises the header as well, but the
+      #                                SDK encoder also keeps the CI image
+      #                                identical to a local build.
       #    - libgnutls28-dev         : host tool tools/mkeficapsule includes
       #                                <gnutls/gnutls.h> unconditionally; it is
       #                                built for every board whose config ends
@@ -108,6 +122,7 @@ jobs:
             python-is-python3 \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi gcc-mips-linux-gnu \
             zstd \
+            lzma lzma-dev \
             libgnutls28-dev \
             nodejs npm
 
@@ -119,6 +134,11 @@ jobs:
           echo "Ref input    = ${{ inputs.branch }}"
           echo "Platform     = ${{ inputs.platform }}"
           echo "This job     = ${{ matrix.platform }}"
+          # Which encoder builds u-boot.bin.lzma decides the LZMA-Alone header:
+          # the SDK (package 'lzma') writes the real uncompressed size, xz
+          # writes -1 and BL2 refuses to boot such a FIP.
+          echo "LZMA encoder = $(command -v lzma || echo none)"
+          lzma --version 2>&1 | head -2 || true
 
       # 3. Checkout the repository to access the build scripts and source code.
       #    The ref is taken from the input, not from the dispatch dropdown: the
