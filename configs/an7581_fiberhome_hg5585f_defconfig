@@ -59,7 +59,10 @@ CONFIG_ENV_UBI_PART="ubi"
 CONFIG_ENV_UBI_VOLUME="ubootenv"
 CONFIG_ENV_UBI_VOLUME_REDUND="ubootenv2"
 CONFIG_ENV_UBI_VOLUME_CREATE=y
-CONFIG_ENV_UBI_EXTRA_VOLUMES="0x40000(factory)"
+# HG5585F stores optical calibration, radio EEPROM and the MAC addresses in
+# a single "factory" UBI volume; 1 MiB matches the layout the OpenWrt images
+# for this board are built with.
+CONFIG_ENV_UBI_EXTRA_VOLUMES="0x100000(factory)"
 CONFIG_ENV_RELOC_GD_ENV_ADDR=y
 CONFIG_ENV_USE_DEFAULT_ENV_TEXT_FILE=y
 CONFIG_ENV_DEFAULT_ENV_TEXT_FILE="defenvs/an7581_fiberhome_hg5585f_env"
