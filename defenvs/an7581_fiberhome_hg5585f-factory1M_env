@@ -1,0 +1,65 @@
+ipaddr=192.168.1.1
+netmask=255.255.255.0
+serverip=192.168.1.254
+loadaddr=0x90000000
+dhcpd_verbose=1
+btnchk_key=reset
+failsafe_compatible_num=3
+
+console=earlycon=uart8250,mmio32,0x11002000 console=ttyS0
+bootcmd=run check_buttons ; run boot_ubi
+bootconf=config-1
+bootdelay=0
+
+bootfile=openwrt-airoha-an7581-fiberhome_hg5585f-factory1M-ubi-initramfs-recovery.itb
+bootfile_bl2=openwrt-airoha-an7581-fiberhome_hg5585f-factory1M-ubi-preloader.bin
+bootfile_fip=openwrt-airoha-an7581-fiberhome_hg5585f-factory1M-ubi-bl31-uboot.fip
+bootfile_upg=openwrt-airoha-an7581-fiberhome_hg5585f-factory1M-ubi-squashfs-sysupgrade.itb
+bootled_status=blue:power
+failsafe_led_idle=blue:power on;blue:sign on;red:pon on
+failsafe_led_ready=blue:power blink 2000
+failsafe_led_upgrade=red:pon on,blue:power on;red:pon on,blue:sign on
+failsafe_led_success=blue:power on,blue:sign on
+failsafe_led_fail=red:pon blink 100
+bootmenu_confirm_return=askenv - Press ENTER to return to menu ; bootmenu 60
+bootmenu_default=0
+bootmenu_delay=0
+bootmenu_title=      [0;34m( ( ( [1;39mOpenWrt[0;34m ) ) )
+bootmenu_0=Initialize environment.=run _firstboot
+bootmenu_0d=Run default boot command.=run boot_default
+bootmenu_1=Boot system via TFTP=run boot_tftp ; run bootmenu_confirm_return
+bootmenu_2=Boot production system from NAND=run boot_production ; run bootmenu_confirm_return
+bootmenu_3=Load production system via TFTP then write to NAND=setenv noboot 1 ; setenv replacevol 1 ; run boot_tftp_production ; setenv noboot ; setenv replacevol ; run bootmenu_confirm_return
+bootmenu_4=[31mLoad BL31+U-Boot FIP via TFTP then write to NAND[0m=run boot_tftp_write_fip ; run bootmenu_confirm_return
+bootmenu_5=[31mLoad BL2 preloader via TFTP then write to NAND[0m=run boot_tftp_write_bl2 ; run bootmenu_confirm_return
+bootmenu_6=Reboot=reset
+bootmenu_7=Reset all settings to factory defaults=run reset_factory ; reset
+bootmenu_8=[32mStart Web failsafe.[0m=httpd
+boot_first=if button reset ; then led $bootled_status on ; run boot_default ; fi ; bootmenu
+boot_default=run bootcmd ; bootfailsafe ; run boot_tftp_forever
+boot_production=led $bootled_status on ; run ubi_read_production && bootm $loadaddr#$bootconf ; led $bootled_status off
+boot_ubi=run boot_production ; bootfailsafe ; run boot_tftp_forever
+boot_tftp_forever=led $bootled_status on ; while true ; do run boot_tftp ; sleep 1 ; done
+boot_tftp_production=tftpboot $loadaddr $bootfile_upg && env exists replacevol && iminfo $loadaddr && run ubi_write_production ; if env exists noboot ; then else bootm $loadaddr#$bootconf ; fi
+boot_tftp_recovery=tftpboot $loadaddr $bootfile && env exists replacevol && iminfo $loadaddr && run ubi_write_recovery ; if env exists noboot ; then else bootm $loadaddr#$bootconf ; fi
+boot_tftp=tftpboot $loadaddr $bootfile && bootm $loadaddr#$bootconf
+boot_tftp_write_bl2=mw.b $loadaddr 0xff 0x800 ; setexpr loadaddr_bl2 $loadaddr + 0x800 ; tftpboot $loadaddr_bl2 $bootfile_bl2 && run mtd_write_bl2
+boot_tftp_write_fip=tftpboot $loadaddr $bootfile_fip && run ubi_write_fip && run reset_factory
+preboot=led $bootled_status on
+check_buttons=if button reset ; then run boot_tftp ; fi
+ethaddr_factory=ubi read 0x90000000 ri && env readmem -b ethaddr 0x9000003e 0x6 ; setenv ethaddr_factory
+part_default=production
+reset_factory=ubi part ubi ; mw $loadaddr 0x0 0x800 ; ubi write $loadaddr ubootenv 0x800 ; ubi write $loadaddr ubootenv2 0x800
+mtd_write_bl2=mtd erase bl2 && mtd write bl2 $loadaddr
+ubi_create_board_data=ubi check factory || ubi create factory 0x100000 || run ubi_format
+ubi_create_env=ubi check ubootenv || ubi create ubootenv 0x1f000 dynamic || run ubi_format ; ubi check ubootenv2 || ubi create ubootenv2 0x1f000 dynamic || run ubi_format
+ubi_format=ubi detach ; mtd erase ubi && ubi part ubi ; reset
+ubi_prepare_rootfs=if ubi check rootfs_data ; then else if env exists rootfs_data_max ; then ubi create rootfs_data $rootfs_data_max dynamic || ubi create rootfs_data - dynamic ; else ubi create rootfs_data - dynamic ; fi ; fi
+ubi_read_production=ubi read $loadaddr fit && iminfo $loadaddr && run ubi_prepare_rootfs
+ubi_remove_rootfs=ubi check rootfs_data && ubi remove rootfs_data
+ubi_write_fip=run ubi_remove_rootfs ; ubi check fip && ubi remove fip ; ubi create fip 0x100000 static && ubi write $loadaddr fip $filesize
+ubi_write_production=ubi check fit && ubi remove fit ; run ubi_remove_rootfs ; ubi create fit $filesize dynamic && ubi write $loadaddr fit $filesize
+_init_env=setenv _init_env ; run ubi_create_env ; saveenv ; saveenv ; run ubi_create_board_data
+_firstboot=setenv _firstboot ; run ethaddr_factory ; run _switch_to_menu ; run _init_env ; run boot_first
+_switch_to_menu=setenv _switch_to_menu ; setenv bootdelay 3 ; setenv bootmenu_delay 3 ; setenv bootmenu_0 $bootmenu_0d ; setenv bootmenu_0d ; run _bootmenu_update_title
+_bootmenu_update_title=setenv _bootmenu_update_title ; setenv bootmenu_subtitle "      [33m$ver[0m"
