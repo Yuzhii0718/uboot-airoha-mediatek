@@ -53,6 +53,8 @@
 #
 fit-dtb.blob*
 fiptool
+# in-tree LZMA SDK encoder built from tools/lzma432 (tools/build_airoha)
+lzma-sdk
 /MLO*
 /SPL*
 /System.map

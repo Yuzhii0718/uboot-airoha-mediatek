@@ -31,6 +31,11 @@ jobs:
       contents: write   # required to create releases in this repository
     steps:
       # 1. Install necessary dependencies for cross-compilation and building
+      #    'lzma'/'lzma-dev' is the legacy LZMA SDK encoder: tools/build_airoha
+      #    compresses u-boot.bin with it, and with the xz fallback that a
+      #    missing package leaves behind, the LZMA-Alone header declares -1
+      #    ("unknown size") and BL2 refuses to boot the FIP with
+      #    "Failed to decompress image (err=1)".
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -38,6 +43,7 @@ jobs:
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             build-essential flex bison libssl-dev \
             device-tree-compiler qemu-user-static \
+            lzma lzma-dev \
             nodejs npm
 
       # 2. Show the effective ref/commit this run will use (for diagnostics)

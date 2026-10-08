@@ -1,6 +1,8 @@
 #
-# Failsafe Web UI
+# WebUI Failsafe
 #
+
+comment "WebUI failsafe"
 
 menuconfig WEBUI_FAILSAFE
 	bool "Enable Failsafe Web UI"
@@ -185,6 +187,46 @@ config WEBUI_FAILSAFE_UI_BRUTALISM
 
 endchoice
 
+choice
+	prompt "Embedded Web UI asset compression"
+	default WEBUI_FAILSAFE_COMPRESS_GZIP
+	help
+	  How the embedded HTML / CSS / JS / SVG assets are stored and
+	  served.
+
+	  NOTE: the failsafe httpd does NOT implement Accept-Encoding
+	  negotiation - it always advertises the encoding selected here.
+	  Brotli was tried but had to be dropped: browsers never advertise
+	  "br" over the plain-HTTP connection the failsafe UI is served on,
+	  so brotli payloads always failed to decode on the client.
+
+config WEBUI_FAILSAFE_COMPRESS_GZIP
+	bool "gzip -9 (default, universally supported)"
+	help
+	  Historical behaviour: assets are gzip -9 compressed and served
+	  with "Content-Encoding: gzip".  Every HTTP client understands
+	  this.
+
+config WEBUI_FAILSAFE_COMPRESS_NONE
+	bool "None - store the minified assets as-is"
+	help
+	  Store the minified (but not compressed) assets and serve them
+	  with no Content-Encoding at all, so no client-side decoding is
+	  involved.
+
+	  This is usually the SMALLEST option in the final image: the
+	  finished u-boot.bin is LZMA compressed as a whole and LZMA
+	  squeezes plain text far better than it can squeeze an already
+	  compressed gzip stream (about 49 KiB vs 64 KiB for the
+	  current asset set, i.e. roughly 15 KiB saved versus gzip).
+
+	  The trade-off is runtime RAM: the assets occupy about 155 KiB
+	  more of the decompressed U-Boot image, and a full page load
+	  transfers about 200 KiB instead of 65 KiB (irrelevant on a
+	  LAN).
+
+endchoice
+
 config WEBUI_FAILSAFE_BUILD_VARIANT
 	string "Failsafe build variant tag"
 	default ""
@@ -200,7 +242,7 @@ config WEBUI_FAILSAFE_I18N
 
 if WEBUI_FAILSAFE_I18N
 
-comment "Embedded languages"
+comment "WebUI failsafe Advanced"
 
 config WEBUI_FAILSAFE_I18N_EN
 	bool "English"
@@ -243,46 +285,6 @@ config WEBUI_FAILSAFE_I18N_TRIM
 	  goes missing.
 
 endif # WEBUI_FAILSAFE_I18N
-
-choice
-	prompt "Embedded Web UI asset compression"
-	default WEBUI_FAILSAFE_COMPRESS_GZIP
-	help
-	  How the embedded HTML / CSS / JS / SVG assets are stored and
-	  served.
-
-	  NOTE: the failsafe httpd does NOT implement Accept-Encoding
-	  negotiation - it always advertises the encoding selected here.
-	  Brotli was tried but had to be dropped: browsers never advertise
-	  "br" over the plain-HTTP connection the failsafe UI is served on,
-	  so brotli payloads always failed to decode on the client.
-
-config WEBUI_FAILSAFE_COMPRESS_GZIP
-	bool "gzip -9 (default, universally supported)"
-	help
-	  Historical behaviour: assets are gzip -9 compressed and served
-	  with "Content-Encoding: gzip".  Every HTTP client understands
-	  this.
-
-config WEBUI_FAILSAFE_COMPRESS_NONE
-	bool "None - store the minified assets as-is"
-	help
-	  Store the minified (but not compressed) assets and serve them
-	  with no Content-Encoding at all, so no client-side decoding is
-	  involved.
-
-	  This is usually the SMALLEST option in the final image: the
-	  finished u-boot.bin is LZMA compressed as a whole and LZMA
-	  squeezes plain text far better than it can squeeze an already
-	  compressed gzip stream (about 49 KiB vs 64 KiB for the
-	  current asset set, i.e. roughly 15 KiB saved versus gzip).
-
-	  The trade-off is runtime RAM: the assets occupy about 155 KiB
-	  more of the decompressed U-Boot image, and a full page load
-	  transfers about 200 KiB instead of 65 KiB (irrelevant on a
-	  LAN).
-
-endchoice
 
 config WEBUI_FAILSAFE_ADVANCED
 	bool "Enable advanced features"
