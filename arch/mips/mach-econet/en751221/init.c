@@ -7,6 +7,7 @@
 #include <linux/kernel.h>
 #include <linux/sizes.h>
 #include <mach/en751221.h>
+#include <soc/airoha/bootsrc.h>
 #include <soc/airoha/pkgids-econet.h>
 
 DECLARE_GLOBAL_DATA_PTR;
@@ -15,10 +16,30 @@ DECLARE_GLOBAL_DATA_PTR;
 
 #define EN7512_BOOTROM_RECOVERY_LATCH	BIT(0)
 
+/* Sampled from the latch before it is cleared, see
+ * en751221_clear_bootrom_recovery_latch(). */
+static bool bootrom_recovery;
+
 /*
+ * econet_bootrom_recovery() - did the BootROM enter its XMODEM recovery path?
+ *
  * The BootROM sets CHIP_SCU[0] when it enters the XMODEM recovery path, which
- * is how the chainloader gets us here. Leaving the latch set sends the SoC
- * straight back into recovery on the next warm reset.
+ * is how the chainloader gets us here, i.e. the image running now was
+ * fetched over the console and never came from the flash.  The latch is
+ * cleared very early (see mach_cpu_init()), because leaving it set sends the
+ * SoC straight back into recovery on the next warm reset, so the value is
+ * sampled first and kept for the rest of the session.  The Web failsafe uses
+ * it to warn the user that the device booted from RAM.
+ */
+bool econet_bootrom_recovery(void)
+{
+	return bootrom_recovery;
+}
+
+/*
+ * The BootROM sets CHIP_SCU[0] when it enters the XMODEM recovery path. Clear
+ * it so a warm reset does not go straight back into recovery, remembering
+ * whether it was set.
  */
 static void en751221_clear_bootrom_recovery_latch(void)
 {
@@ -26,7 +47,9 @@ static void en751221_clear_bootrom_recovery_latch(void)
 	u32 val;
 
 	val = __raw_readl(reg);
-	if (!(val & EN7512_BOOTROM_RECOVERY_LATCH))
+
+	bootrom_recovery = !!(val & EN7512_BOOTROM_RECOVERY_LATCH);
+	if (!bootrom_recovery)
 		return;
 
 	__raw_writel(val & ~EN7512_BOOTROM_RECOVERY_LATCH, reg);
