@@ -5,11 +5,13 @@
 
 #include <cpu_func.h>
 #include <dm.h>
+#include <errno.h>
 #include <init.h>
 #include <wdt.h>
 #include <dm/uclass-internal.h>
 #include <linux/arm-smccc.h>
 #include <linux/types.h>
+#include <soc/mediatek/bootsrc.h>
 
 #define MTK_SIP_PLAT_BINFO ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_64, \
 					      ARM_SMCCC_OWNER_SIP, 0x529)
@@ -26,6 +28,32 @@ void enable_caches(void)
 	/* Enable D-cache. I-cache is already enabled in start.S */
 	dcache_enable();
 }
+
+#if defined(CONFIG_ARM64)
+/* x2 as left by the previous boot stage, see boot_params.S. */
+extern u64 mtk_bl33_arg2;
+
+int mtk_get_boot_source(enum mtk_boot_source *src)
+{
+	u32 value = (u32)mtk_bl33_arg2;
+
+	/* The magic is what tells a published boot source from whatever the
+	 * register happened to hold. */
+	if ((value >> 16) != MTK_BOOTSRC_MAGIC)
+		return -ENOENT;
+
+	switch (value & 0xffff) {
+	case MTK_BOOTSRC_FLASH:
+		*src = MTK_BOOT_SOURCE_FLASH;
+		return 0;
+	case MTK_BOOTSRC_RAM:
+		*src = MTK_BOOT_SOURCE_RAM;
+		return 0;
+	default:
+		return -ENOENT;
+	}
+}
+#endif /* CONFIG_ARM64 */
 
 /**
  * mediatek_sip_part_name - get the part name
