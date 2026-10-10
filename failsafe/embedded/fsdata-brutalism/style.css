@@ -602,3 +602,97 @@ hr::after {
 	transform: translate(2px, 2px);
 	box-shadow: 2px 2px 0 0 #ff0000;
 }
+
+/* ----- RAM (CONSOLE RECOVERY) SESSION WARNING -----
+ * Shown while the bootloader runs from DRAM only, i.e. nothing has been
+ * written to the flash yet (see main.js and failsafe/boot_mode.c).
+ */
+.ram-banner {
+	margin: 0 0 20px 0;
+	padding: 14px;
+	border: 4px solid #ff0000;
+	background: #1a0000;
+	color: #ff0000;
+	line-height: 1.5;
+	box-shadow: 8px 8px 0 0 #ffff00;
+}
+
+.ram-banner strong {
+	display: inline-block;
+	margin-right: 10px;
+	padding: 0 8px;
+	background: #ff0000;
+	color: #000000;
+	letter-spacing: 3px;
+}
+
+.ram-banner span {
+	color: #ffff00;
+}
+
+.ram-banner a {
+	display: inline-block;
+	margin-left: 10px;
+	padding: 0 8px;
+	border: 3px solid #ffff00;
+	color: #ffff00;
+	text-decoration: none;
+}
+
+.ram-banner a:hover {
+	background: #ffff00;
+	color: #000000;
+}
+
+/* Above the CRT scanline overlay of body::before (z-index: 9999). */
+.ram-modal {
+	position: fixed;
+	top: 0; left: 0; right: 0; bottom: 0;
+	background: rgba(0, 0, 0, 0.85);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	z-index: 10000;
+}
+
+.ram-modal-box {
+	max-width: 640px;
+	padding: 22px;
+	border: 6px solid #ff0000;
+	background: #000000;
+	color: #00ff00;
+	box-shadow: 14px 14px 0 0 #ffff00;
+}
+
+.ram-modal-title {
+	margin: 0 0 14px 0;
+	color: #ff0000;
+	font-size: 18px;
+	text-transform: uppercase;
+	letter-spacing: 3px;
+}
+
+.ram-modal-body {
+	margin: 0 0 18px 0;
+	color: #ffff00;
+	line-height: 1.6;
+}
+
+.ram-modal-btn {
+	display: inline-block;
+	margin: 0 12px 0 0;
+	padding: 6px 14px;
+	border: 3px solid #00ff00;
+	background: #000000;
+	color: #00ff00;
+	font: inherit;
+	font-weight: bold;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.ram-modal-btn:hover {
+	background: #00ff00;
+	color: #000000;
+}

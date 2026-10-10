@@ -161,6 +161,137 @@
 		}).catch(function () { /* keep the static text */ });
 	};
 
+	/* ---- RAM (console recovery) session warning ----
+	 * GET /sysinfo reports "boot.mode" (see common/boot_mode.c and
+	 * failsafe/modules/sysinfo.c): "ram" means the bootloader was fetched
+	 * over the console by the previous boot stage and runs from DRAM
+	 * only, so nothing has reached the flash yet.  Uploading only a
+	 * firmware image, or rebooting, then leaves a device whose bootloader
+	 * is missing or does not match the installed firmware - the usual way
+	 * a device bricks.
+	 *
+	 * Only "ram" warns; "unknown" (a boot chain that cannot report the
+	 * mode) must not produce a false alarm.  The banner stays on the page,
+	 * the modal is shown once per browser session.
+	 */
+	var bootMode = "unknown";
+	var RAM_MODAL_KEY = "failsafe_ram_modal_shown";
+
+	function bootModeIsRam() { return bootMode === "ram"; }
+
+	function ramText(key) {
+		return (w.i18n && w.i18n.t) ? w.i18n.t(key) : key;
+	}
+
+	function showRamBanner() {
+		var main = d.getElementById("main");
+		if (!main || d.getElementById("ram-banner")) return;
+
+		var el = d.createElement("div");
+		el.id = "ram-banner";
+		el.className = "ram-banner";
+		el.setAttribute("role", "alert");
+
+		var tag = d.createElement("strong");
+		tag.setAttribute("data-i18n", "ram.badge");
+		tag.textContent = ramText("ram.badge");
+		el.appendChild(tag);
+
+		var text = d.createElement("span");
+		text.setAttribute("data-i18n", "ram.banner");
+		text.textContent = ramText("ram.banner");
+		el.appendChild(text);
+
+		var link = d.createElement("a");
+		link.href = "#section-uboot";
+		link.setAttribute("data-i18n", "ram.bootloader");
+		link.textContent = ramText("ram.bootloader");
+		el.appendChild(link);
+
+		main.insertBefore(el, main.firstChild);
+	}
+
+	function closeRamModal() {
+		var overlay = d.getElementById("ram-modal");
+		if (overlay) overlay.parentNode.removeChild(overlay);
+	}
+
+	function showRamModal() {
+		if (d.getElementById("ram-modal")) return;
+
+		var overlay = d.createElement("div");
+		overlay.id = "ram-modal";
+		overlay.className = "ram-modal";
+
+		var box = d.createElement("div");
+		box.className = "ram-modal-box";
+		box.setAttribute("role", "dialog");
+		box.setAttribute("aria-modal", "true");
+
+		var title = d.createElement("p");
+		title.className = "ram-modal-title";
+		title.setAttribute("data-i18n", "ram.title");
+		title.textContent = ramText("ram.title");
+		box.appendChild(title);
+
+		var body = d.createElement("p");
+		body.className = "ram-modal-body";
+		body.setAttribute("data-i18n", "ram.body");
+		body.innerHTML = ramText("ram.body");
+		box.appendChild(body);
+
+		var go = d.createElement("a");
+		go.className = "ram-modal-btn";
+		go.href = "#section-uboot";
+		go.setAttribute("data-i18n", "ram.bootloader");
+		go.textContent = ramText("ram.bootloader");
+		go.addEventListener("click", closeRamModal);
+		box.appendChild(go);
+
+		var ok = d.createElement("button");
+		ok.type = "button";
+		ok.className = "ram-modal-btn";
+		ok.setAttribute("data-i18n", "ram.dismiss");
+		ok.textContent = ramText("ram.dismiss");
+		ok.addEventListener("click", closeRamModal);
+		box.appendChild(ok);
+
+		overlay.appendChild(box);
+		d.body.appendChild(overlay);
+	}
+
+	function applyBootMode() {
+		if (!bootModeIsRam()) return;
+
+		showRamBanner();
+
+		try {
+			if (sessionStorage.getItem(RAM_MODAL_KEY) === "1") return;
+			sessionStorage.setItem(RAM_MODAL_KEY, "1");
+		} catch (e) { /* no sessionStorage: show it once per load */ }
+
+		showRamModal();
+	}
+
+	function fetchBootMode() {
+		var x = new XMLHttpRequest();
+		x.open("GET", "/sysinfo");
+		x.timeout = 3000;
+		x.onreadystatechange = function () {
+			if (x.readyState !== 4 || x.status !== 200) return;
+
+			try {
+				var info = JSON.parse(x.responseText);
+				bootMode = (info && info.boot && info.boot.mode) || "unknown";
+			} catch (e) {
+				return;
+			}
+
+			applyBootMode();
+		};
+		x.send();
+	}
+
 	/* ---- Reset: hide #upload-result, show all upload forms ---- */
 	w.brutalismResetUpload = function () {
 		var res = d.getElementById("upload-result");
@@ -201,6 +332,11 @@
 	w.brutalismReboot = function (mode) {
 		var m = (mode === "failsafe") ? "failsafe" :
 			(mode === "boot") ? "boot" : "normal";
+
+		/* Rebooting is the action that turns a RAM session into a brick,
+		 * so it is called out here as well as by the banner. */
+		if (bootModeIsRam() && !w.confirm(ramText("ram.reboot_confirm")))
+			return;
 
 		w.location = "/reboot.html?mode=" + m;
 	};
@@ -252,6 +388,7 @@
 	function init() {
 		initLang();
 		fetchVersion();
+		fetchBootMode();
 		patchResultLoader();
 	}
 

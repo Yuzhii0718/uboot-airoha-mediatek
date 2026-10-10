@@ -10,6 +10,15 @@
 		en: {
 			/* Common */
 			"banner.title": "AIROHA U-BOOT SYSTEM RECOVERY",
+			/* RAM (console recovery) session warning - see main.js and
+			 * common/boot_mode.c. */
+			"ram.badge": "RAM",
+			"ram.banner": "RUNNING FROM RAM - IF THE FLASH HAS NO VALID BOOTLOADER, THE DEVICE WILL NOT BOOT AFTER A RESET.",
+			"ram.title": "RUNNING FROM RAM",
+			"ram.body": "THIS U-BOOT WAS LOADED INTO RAM BY THE PREVIOUS BOOT STAGE; NOTHING DONE HERE IS WRITTEN TO THE FLASH UNTIL IT IS WRITTEN EXPLICITLY.<br><br>IF THE BOOTLOADER IN THE FLASH IS MISSING, DAMAGED OR DOES NOT MATCH, THE DEVICE WILL NOT BOOT AGAIN AFTER A RESET - UPLOADING A FIRMWARE IMAGE ALONE DOES NOT FIX THAT.<br><br>BEFORE REBOOTING, MAKE SURE THE BOOTLOADER IN THE FLASH MATCHES YOUR FIRMWARE; WHEN IN DOUBT, FLASH THE <strong>BOOTLOADER</strong> (U-BOOT / FIP / BL2) AGAIN.",
+			"ram.bootloader": "[ FLASH BOOTLOADER ]",
+			"ram.dismiss": "[ I UNDERSTAND ]",
+			"ram.reboot_confirm": "RUNNING FROM RAM: IF THE FLASH HAS NO VALID BOOTLOADER, REBOOTING NOW WILL BRICK IT - FLASH THE BOOTLOADER FIRST. REBOOT ANYWAY?",
 			"lang.switch": "中文",
 			"lang.label": "LANG",
 
@@ -102,6 +111,14 @@
 		zh: {
 			/* 通用 */
 			"banner.title": "AIROHA U-BOOT 系统恢复",
+			/* RAM（串口恢复）会话警告 - 见 main.js 与 common/boot_mode.c */
+			"ram.badge": "RAM",
+			"ram.banner": "当前运行在内存中 —— 若闪存中没有可用的引导程序，重启后设备将无法启动。",
+			"ram.title": "当前运行在内存中",
+			"ram.body": "当前 U-Boot 是由上一级引导加载到内存中运行的，在显式写入之前，本次会话的任何内容都不会保存到闪存。<br><br>如果闪存中的引导程序缺失、损坏或不匹配，重启后设备就无法再启动，只上传固件并不能解决这个问题。<br><br>请在重启前确认闪存中的引导程序与固件匹配；不确定时，先重新刷一遍 <strong>引导程序</strong>（U-Boot / FIP / BL2）。",
+			"ram.bootloader": "[ 刷写引导程序 ]",
+			"ram.dismiss": "[ 我知道了 ]",
+			"ram.reboot_confirm": "当前运行在内存中：若闪存中没有可用的引导程序，此时会导致设备无法启动 —— 请先刷写引导程序。仍要重启？",
 			"lang.switch": "EN",
 			"lang.label": "语言",
 
