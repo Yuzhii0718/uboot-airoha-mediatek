@@ -21,7 +21,7 @@ To enter recovery mode, use the WPS/Mesh button or the BreedEnter/UbootEnter too
 - Prepare for ARM
 
 ```bash
-sudo apt install python3 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi build-essential flex bison libssl-dev device-tree-compiler qemu-user-static lzma lzma-dev nodejs npm
+sudo apt install python3 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi build-essential flex bison libssl-dev device-tree-compiler qemu-user-static lzma lzma-dev unzip xz-utils nodejs npm
 ```
 
 - Prepare for MIPS
@@ -40,15 +40,16 @@ git clone <repository_url>
 - Build U-Boot FIP for AIROHA(ARM)
 
 ```bash
+git clone <atf_airoha_url> atf-airoha
 cd uboot-airoha-mediatek
 SOC=<en7523|an7563|an7581|an7583> BOARD=<board_name> ./airoha.sh
 # more help: ./airoha.sh --help
 ```
 
-> Due to historical reasons, this repository uses the `build_airoha` tool to build the Airoha FIP. The "legacy" binaries are sourced from the OEMs, while the open-source binaries originate from [atf-airoha](https://github.com/Yuzhii0718/atf-airoha). You can choose to build only the U-Boot file and then manually assemble the FIP using other ATF files.
+> Due to historical reasons, this repository uses the `build_airoha` tool to build the Airoha FIP. The "legacy" binaries are sourced from the OEMs, while the open-source binaries originate from [atf-airoha](https://github.com/Yuzhii0718/atf-airoha).
 
 > [!IMPORTANT]
-> **Airoha builds need the legacy LZMA SDK encoder (`lzma`).
+> **Airoha builds need the legacy LZMA SDK encoder (`lzma`).**
 
 - Build U-Boot FIP for Mediatek(ARM)
 

@@ -270,10 +270,14 @@ The images are built as part of the normal build::
     make <soc>_<board>_defconfig
     make
 
-The ``airoha.sh`` wrapper does the same and additionally collects the results
-into ``output/<soc>_<board>-<image>`` together with their checksums::
+``make`` alone uses whichever blob source ``.config`` selected; with the default
+``source`` layout the blobs have to be staged first, so use the ``airoha.sh``
+wrapper, which also collects the results into
+``output_airoha/<soc>_<board>-<image>`` together with their checksums::
 
-    SOC=an7581 BOARD=evb ./airoha.sh
+    SOC=an7581 BOARD=evb ./airoha.sh                     # ATF + U-Boot + FIP
+    SOC=an7581 BOARD=evb STAGE=atf ./airoha.sh           # stage the ATF blobs
+    SOC=an7581 BOARD=evb BLOBS=opensource ./airoha.sh    # checked-in blobs
 
 The tools involved are:
 
@@ -296,23 +300,64 @@ Note that ``u-boot.bin`` is compressed with the LZMA SDK encoder (``lzma -c``)
 in preference to ``xz``: BL2 needs the real uncompressed size in the 8-byte
 LZMA-Alone header field, which ``xz`` leaves unset.
 
-Prebuilt binaries
------------------
+Bootloader binaries
+-------------------
 
-BL1, BL2, BL31 and the certificates are prebuilt blobs that live under
-``tools/build_airoha/``:
+BL1, BL2 and BL31 come from one of three sources, selected by the
+``CONFIG_AIROHA_BLOBS_*`` choice in ``board/airoha/Kconfig``:
 
-* ``legacy/<variant>/`` -- SDK binaries: ``bl1.bin``, ``bl2.bin``,
-  ``bl31.lzma``, ``certificates.bin``, ``key_area.bin``.
-* ``opensource/<variant>/`` -- open-source binaries: ``bl2.bin``,
-  ``bl31.lzma``.
+``CONFIG_AIROHA_BLOBS_SOURCE`` (default for the modern build)
+  Build them from the ATF source tree.  ``airoha.sh`` compiles ``../atf-airoha``
+  (override the location with ``ATF_DIR=<path>``) and stages the artifacts under
+  ``tools/build_airoha/source/<variant>/`` before
+  ``tools/build_airoha/Makefile`` packs the FIP, so the packaged bootloader
+  always matches the source tree it was built from::
 
-``<variant>`` defaults to ``<soc>_default``; the group is chosen by
-``CONFIG_AIROHA_BLOBS_LEGACY`` / ``CONFIG_AIROHA_BLOBS_OPENSOURCE`` (default:
-``opensource/`` for the modern build, ``legacy/`` for the legacy build, but a
-legacy board can pick ``opensource/`` too -- AN7563 does) and the name can be
-overridden with ``CONFIG_AIROHA_FIP_BLOBS_DIR`` for boards that need their own
-blobs.
+      SOC=an7581 BOARD=evb ./airoha.sh             # ATF + U-Boot + FIP
+      SOC=an7581 BOARD=evb STAGE=atf ./airoha.sh   # stage the ATF blobs only
+      SOC=an7581 BOARD=evb STAGE=uboot ./airoha.sh # reuse the staged blobs
+
+  ``source/`` is generated, not checked in, and a build that cannot find it
+  fails with the commands above.  The ATF platform is taken from the resolved
+  ``CONFIG_SYS_SOC``.  The ATF platforms are named after the whole SoC family,
+  and a family covers several package variants
+  (``include/soc/airoha/pkgids.h``)::
+
+      EN7523 family   en7523 / en7529 / en7562           -> atf en7523
+      EN7581 family   an7581 / an7566 / an7551           -> atf an7581
+      AN7583 family   an7583 / an9510 / an7553 / an7567  -> atf an7583
+      AN7552 family   an7552 / an7563                    -> atf an7552
+
+  The variants already collapse before the mapping runs
+  (``arch/arm/mach-airoha/Kconfig`` gives ``CONFIG_SYS_SOC`` one default per
+  ``TARGET_*`` symbol), so the EN7562 boards select ``CONFIG_TARGET_EN7523`` and
+  build the EN7523 binaries; the package ID read at runtime selects the exact
+  variant.  AN7563 is the only family member that keeps its own name in
+  ``.config`` while being built from the AN7552 platform.
+
+  This needs the AArch32/AArch64 toolchains and the ATF tree; the ATF
+  ``build.sh`` fetches its own host archives when they are missing.
+
+``CONFIG_AIROHA_BLOBS_OPENSOURCE`` (deprecated)
+  Prebuilt open-source binaries from ``opensource/<variant>/``: ``bl2.bin``,
+  ``bl31.lzma``.  Superseded by ``CONFIG_AIROHA_BLOBS_SOURCE``; kept for one
+  transition release to reproduce a firmware that was still packaged from the
+  checked-in blobs.
+
+``CONFIG_AIROHA_BLOBS_LEGACY`` (default for the legacy build)
+  SDK binaries from ``legacy/<variant>/``: ``bl1.bin``, ``bl2.bin``,
+  ``bl31.lzma``, ``certificates.bin``, ``key_area.bin``.  Only these carry the
+  certificates and key area, so they are the only ones that can build a legacy
+  image with BL1 or a ``bootext.ram`` with certificates.
+
+``<variant>`` defaults to ``<soc>_default`` and can be overridden per board with
+``CONFIG_AIROHA_FIP_BLOBS_DIR``.  Any build can override the selection for a
+single run with ``BLOBS=source|opensource|legacy`` -- e.g. ``BLOBS=opensource``
+on a machine without the ATF tree.
+
+Every blob is structure-checked right before it is packed (``_validate_bl2`` /
+``_validate_bl31`` in ``tools/build_airoha/Makefile``); a corrupted or truncated
+image aborts the build instead of producing a broken FIP.
 
 Flash placement
 ---------------
