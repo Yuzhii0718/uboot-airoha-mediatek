@@ -36,19 +36,6 @@ config WEB_FAILSAFE_AFTER_BOOT_FAILURE
 	  run before their TFTP recovery fallback so that a failed boot has
 	  priority over the (endless) TFTP recovery loop.
 
-config WEBUI_FAILSAFE_COLOR
-	bool "VT100 colored console output"
-	depends on WEBUI_FAILSAFE
-	default y
-	help
-	  Print failsafe status / error / warning messages to the serial
-	  console using VT100 / ANSI SGR escape codes so errors, cautions
-	  and prompts are visually distinguishable from normal text.
-
-	  Disable this when the console is not a VT100 terminal (the escape
-	  codes would otherwise show up as garbage).  The Web console keeps
-	  rendering them (its JSON layer round-trips the CSI sequences).
-
 config WEBUI_FAILSAFE_LED
 	bool "LED status indication"
 	depends on LED

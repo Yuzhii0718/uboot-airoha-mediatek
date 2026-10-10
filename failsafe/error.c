@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <vsprintf.h>
 #include <failsafe/error.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 
 static char failsafe_err_msg[FAILSAFE_ERROR_MSG_SIZE];
 static int failsafe_err_code;

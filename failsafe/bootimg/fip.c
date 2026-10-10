@@ -20,7 +20,7 @@
 
 #include <failsafe/fip.h>
 #include <failsafe/image.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 #include <failsafe/error.h>
 
 const u8 failsafe_fip_uuid_tb_fw[16] = {

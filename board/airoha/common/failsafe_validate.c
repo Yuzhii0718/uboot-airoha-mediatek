@@ -57,7 +57,7 @@
 #include <failsafe/fw_type.h>
 #include <failsafe/fip.h>
 #include <failsafe/image.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 #include <failsafe/error.h>
 
 #include "failsafe_validate.h"

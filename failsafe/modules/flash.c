@@ -49,7 +49,7 @@
 #endif
 
 #include <failsafe/mmc.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 #if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_FLASH_LAYOUT)
 #include <failsafe/layout.h>
 #endif

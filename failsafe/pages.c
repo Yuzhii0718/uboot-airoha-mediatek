@@ -32,7 +32,7 @@
 
 #include <failsafe/internal.h>
 #include <failsafe/helpers.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 
 struct failsafe_page {
 	const char *id;		/* page id / sidebar nav id, NULL when the

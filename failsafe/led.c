@@ -68,7 +68,7 @@
 #include <vsprintf.h>
 
 #include <failsafe/led.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 
 /*
  * This file is only built when CONFIG_WEBUI_FAILSAFE_LED is enabled, which

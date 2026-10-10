@@ -23,3 +23,8 @@
 #define ANSI_CLEAR_LINE			"\e[2K"
 #define ANSI_COLOR_RESET		"\e[0m"
 #define ANSI_COLOR_REVERSE		"\e[7m"
+
+/* SGR foreground colours, for messages that have to stand out */
+#define ANSI_COLOR_RED			"\e[1;31m"
+#define ANSI_COLOR_GREEN		"\e[32m"
+#define ANSI_COLOR_YELLOW		"\e[0;33m"

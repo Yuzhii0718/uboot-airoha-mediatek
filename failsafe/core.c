@@ -40,7 +40,7 @@
 #include <failsafe/led.h>
 
 #include <failsafe/internal.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 
 /* ------------------------------------------------------------------ */
 /*  Defines for default IP/netmask when env vars are not set             */

@@ -15,7 +15,7 @@
 #include <linux/libfdt.h>
 #include <linux/string.h>
 #include <failsafe/layout.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 

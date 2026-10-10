@@ -39,7 +39,7 @@
 
 #include <failsafe/storage.h>
 #include <failsafe/mtd.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 #include <failsafe/error.h>
 
 #if IS_ENABLED(CONFIG_MTD)

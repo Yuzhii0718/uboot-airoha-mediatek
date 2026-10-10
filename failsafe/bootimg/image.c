@@ -23,7 +23,7 @@
 
 #include <failsafe/image.h>
 #include <failsafe/compress.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 #include <failsafe/error.h>
 
 #if CONFIG_IS_ENABLED(FIT)

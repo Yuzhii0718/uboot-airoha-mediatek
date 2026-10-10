@@ -25,7 +25,7 @@
 #endif
 
 #include <failsafe/internal.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 

@@ -41,7 +41,7 @@
 #endif
 
 #include <failsafe/internal.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 
 /* Maximum payload of a single /simg/write request.  The browser must use
  * the exact same value (it is also reported by /simg/info as

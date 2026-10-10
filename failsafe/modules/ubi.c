@@ -33,7 +33,7 @@
 
 #include <failsafe/internal.h>
 #include <failsafe/storage.h>
-#include <failsafe/cprint.h>
+#include <cprint.h>
 
 #include <env.h>
 #if IS_ENABLED(CONFIG_ENV_IS_IN_UBI)
