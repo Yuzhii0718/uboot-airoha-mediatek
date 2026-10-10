@@ -49,6 +49,10 @@ obj-$(CONFIG_MENU) += menu.o
 obj-$(CONFIG_UPDATE_COMMON) += update.o
 obj-$(CONFIG_USB_KEYBOARD) += usb_kbd.o
 
+# Boot mode of the running session (flash vs a volatile RAM session), which
+# also drives the warning of the Web failsafe; see include/boot_mode.h
+obj-$(CONFIG_BOOT_MODE) += boot_mode.o
+
 endif # !CONFIG_XPL_BUILD
 
 obj-$(CONFIG_$(PHASE_)BOOTSTAGE) += bootstage.o

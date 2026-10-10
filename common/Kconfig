@@ -784,7 +784,7 @@ config LAST_STAGE_INIT
 
 config CONSOLE_COLOR
 	bool "VT100 colored console output"
-	default y if WEBUI_FAILSAFE
+	default y if BOOT_MODE || WEBUI_FAILSAFE
 	help
 	  Print U-Boot messages - the boot mode report (common/boot_mode.c) and
 	  the Web failsafe - using VT100 / ANSI SGR escape codes, so errors,
@@ -799,6 +799,28 @@ config CONSOLE_COLOR
 	  This is where the failsafe's own WEBUI_FAILSAFE_COLOR option went
 	  when the boot mode report became a second, non-failsafe, user of the
 	  same colored output.
+
+config BOOT_MODE
+	bool "Report how this U-Boot was obtained (boot mode)"
+	select EVENT
+	default y if ARCH_AIROHA || ARCH_MEDIATEK || ARCH_ECONET
+	help
+	  Report once per boot whether this U-Boot was read from the flash or
+	  was fetched over the console by the previous boot stage and is
+	  therefore running from RAM only - where the boot chain is able to
+	  report it at all (Airoha, MediaTek Filogic, EcoNet).
+
+	  The line ("Boot source: flash" / "RAM" / "unknown") is what makes
+	  the boot mode readable without the Web failsafe, and the answer is
+	  also part of the "boot" field of its GET /sysinfo: the Web UI warns
+	  about a volatile recovery session, in which nothing has been
+	  written to the flash yet.
+
+	  This selects the event framework, whose last-stage hook is where the
+	  report is made (common/boot_mode.c).
+
+	  The environment variable 'boot_mode' overrides the report with 'ram'
+	  or 'flash'; 'auto' (the default) uses the report of the boot chain.
 
 config MISC_INIT_R
 	bool "Execute Misc Init"
