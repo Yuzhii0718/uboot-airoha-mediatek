@@ -10,6 +10,7 @@ menuconfig WEBUI_FAILSAFE
 	select MTK_HTTPD
 	select MTK_DHCPD
 	select MD5
+	select BOOT_MODE
 	default n
 	help
 	  Enable the failsafe Web UI, a minimal Web server (httpd + dhcpd +

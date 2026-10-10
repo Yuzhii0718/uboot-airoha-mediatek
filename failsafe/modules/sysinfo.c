@@ -12,6 +12,7 @@
  * manual /atfversion debugging endpoint (flashed BL2 / BL31 banners)
  */
 
+#include <boot_mode.h>
 #include <env.h>
 #include <malloc.h>
 #include <net/mtk_httpd.h>
@@ -307,6 +308,15 @@ static int sysinfo_json_append_board(char *buf, int len, int left)
 #else
 	len = buf_appendf(buf, left, len, ",\"atf\":false");
 #endif
+
+	/*
+	 * Boot mode of this session, see <boot_mode.h>: "ram" means the
+	 * bootloader was obtained over the console and lives in DRAM only, so
+	 * nothing has reached the flash yet - the Web UI warns the user about
+	 * it and points at the bootloader pages.
+	 */
+	len = buf_appendf(buf, left, len, ",\"boot\":{\"mode\":\"%s\"}",
+			  boot_mode_name(boot_mode_get()));
 
 #if IS_ENABLED(CONFIG_WEBUI_FAILSAFE_LAYOUT_FIP)
 	/* Size of the storage holding the FIP - a build time value, 1 MiB on
