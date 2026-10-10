@@ -2,9 +2,9 @@
 #
 # Airoha FIP image builder
 #
-# This Makefile bundles BL2/BL31 prebuilt binaries (located in per-SoC
-# subdirectories) together with the just-built u-boot.bin into FIP
-# (Firmware Image Package) images using fiptool.
+# This Makefile bundles the BL2/BL31 binaries (from per-SoC subdirectories of
+# this directory: source/, opensource/ or legacy/) together with the just-built
+# u-boot.bin into FIP (Firmware Image Package) images using fiptool.
 #
 # Kconfig-driven behaviour:
 #   CONFIG_AIROHA_BUILD_MODERN    — split FIP build (AN7581/AN7583)
@@ -13,10 +13,12 @@
 #   CONFIG_AIROHA_LEGACY_BL1      — prepend BL1 (bl1-bl2-bl31-uboot.bin) or
 #                                   not (bl2-bl31-uboot.bin); default y on
 #                                   EN7523
-#   CONFIG_AIROHA_BLOBS_LEGACY / _OPENSOURCE — blob source directory
-#                                   (legacy/ or opensource/ under this
-#                                   directory; defaults to opensource for the
-#                                   modern build, legacy for the legacy one)
+#   CONFIG_AIROHA_BLOBS_SOURCE / _OPENSOURCE / _LEGACY — blob source directory
+#                                   (source/, opensource/ or legacy/ under this
+#                                   directory; defaults to source for the
+#                                   modern build - airoha.sh stages the ATF
+#                                   artifacts there - and to legacy for the
+#                                   legacy one)
 #   CONFIG_AIROHA_BUILD_CHAINLOADER     — chainloader build (AN7581)
 #   CONFIG_AIROHA_CHAINLOADER_METHOD_*  — build method: OPENWRT (default,
 #                                         mkits.sh style) or SHIM (legacy
@@ -62,12 +64,14 @@ else
   SOC_VARIANT := $(SOC)_default
 endif
 
-# Pick the blob directory: opensource/<variant> when
-# CONFIG_AIROHA_BLOBS_OPENSOURCE is selected, otherwise the SDK path
-# legacy/<variant>.  The Kconfig choice defaults to opensource for the modern
-# build and to legacy for the legacy build, and can be flipped per board
-# (e.g. AN7563 builds its 512 KiB image from the open-source blobs).
-ifeq ($(CONFIG_AIROHA_BLOBS_OPENSOURCE),y)
+# Pick the blob directory:
+#   source/<variant>     - built from the ATF source tree by airoha.sh
+#                          (CONFIG_AIROHA_BLOBS_SOURCE, modern default),
+#   opensource/<variant> - checked-in open-source blobs (deprecated),
+#   legacy/<variant>     - vendor SDK blobs (legacy default).
+ifeq ($(CONFIG_AIROHA_BLOBS_SOURCE),y)
+  BLOBS_BASE := source
+else ifeq ($(CONFIG_AIROHA_BLOBS_OPENSOURCE),y)
   BLOBS_BASE := opensource
 else
   BLOBS_BASE := legacy
@@ -83,6 +87,22 @@ BL2_BIN      := $(BLOBS_DIR)/bl2.bin
 BL31_LZMA    := $(BLOBS_DIR)/bl31.lzma
 CERT_BIN     := $(BLOBS_DIR)/certificates.bin
 KEY_AREA_BIN := $(BLOBS_DIR)/key_area.bin
+
+# The 'source' layout is produced by airoha.sh from the ATF source tree and is
+# deliberately not checked in.  Without these stubs make would abort with a bare
+# "No rule to make target 'source/<variant>/bl2.bin'"; this turns that into the
+# command that fixes it.  When the files do exist the stubs are inert (a target
+# without prerequisites whose file exists is already up to date).
+ifeq ($(BLOBS_BASE),source)
+$(BL2_BIN) $(BL31_LZMA):
+	@echo "ERROR: $(BLOBS_DIR) has no $@:"
+	@echo "       the 'source' blob layout is built from the ATF source tree by airoha.sh."
+	@echo "       Run:  SOC=<soc> BOARD=<board> ./airoha.sh            # STAGE=all"
+	@echo "             SOC=<soc> BOARD=<board> STAGE=atf ./airoha.sh  # blobs only"
+	@echo "       Or build against the checked-in blobs: re-run with BLOBS=opensource,"
+	@echo "       or select CONFIG_AIROHA_BLOBS_OPENSOURCE / _LEGACY in the defconfig."
+	@exit 1
+endif
 
 BL2_FIP      := $(OUT_DIR)/preloader.bin
 BL1_PRELOADER := $(OUT_DIR)/bl1-preloader.bin

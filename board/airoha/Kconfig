@@ -68,16 +68,31 @@ choice
 endchoice
 
 choice
-	prompt "Prebuilt BL blob source"
-	default AIROHA_BLOBS_OPENSOURCE if AIROHA_BUILD_MODERN
+	prompt "BL blob source"
+	default AIROHA_BLOBS_SOURCE if AIROHA_BUILD_MODERN
 	default AIROHA_BLOBS_LEGACY
 	help
-	  Select the directory under tools/build_airoha/ the prebuilt
-	  bootloader binaries (BL1/BL2/BL31, certificates) are taken from.
+	  Select where the BL1/BL2/BL31 binaries the FIP images are built
+	  from come from.
 
-	  Only the subdirectory differs; the per-board variant name
-	  (default <soc>_default) is still selected by
-	  CONFIG_AIROHA_FIP_BLOBS_DIR.
+	  The per-board variant name (default <soc>_default) is still
+	  selected by CONFIG_AIROHA_FIP_BLOBS_DIR.
+
+	config AIROHA_BLOBS_SOURCE
+		bool "Build from the ATF source tree (../atf-airoha)"
+		help
+		  Build BL2/BL31 (and BL1 on EN7523) from the ATF source tree
+		  instead of using a checked-in blob.  airoha.sh compiles
+		  ../atf-airoha and stages the artifacts under
+		  tools/build_airoha/source/<variant>/ before the FIP is
+		  packed, so the packaged bootloader always matches the source
+		  tree it was built from.
+
+		  This is the default for the modern build.  It needs the ATF
+		  tree at build time (override its location with ATF_DIR) and
+		  the AArch32/AArch64 toolchains; a build that cannot find the
+		  tree fails with instructions to switch to one of the
+		  alternatives below (or re-run with BLOBS=opensource).
 
 	config AIROHA_BLOBS_LEGACY
 		bool "SDK blobs (tools/build_airoha/legacy)"
@@ -89,9 +104,15 @@ choice
 		  This is the default for the legacy build.
 
 	config AIROHA_BLOBS_OPENSOURCE
-		bool "Open-source blobs (tools/build_airoha/opensource)"
+		bool "Open-source blobs (tools/build_airoha/opensource) [deprecated]"
 		help
-		  Use the open-source blobs from opensource/<variant>.
+		  Use the prebuilt open-source blobs from
+		  opensource/<variant>.
+
+		  Deprecated: superseded by AIROHA_BLOBS_SOURCE, which builds
+		  the very same images from the ATF source tree.  Kept for one
+		  transition release (to reproduce a firmware that was still
+		  packaged from the checked-in blobs) and removed afterwards.
 
 endchoice
 
