@@ -392,7 +392,7 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.soc_ecc_ability	= 4,
 	},
 	/* Spansion */
-	/* Spansion| S34ML02G300TFI00| 4bit/512 */
+	/* Spansion| S34ML02G300TFI00| 1bit/512 */
 	{
 		.mfr_id		= _SPI_NAND_MANUFACTURER_ID_SPANSION,
 		.dev_id		= 0xDA,
@@ -403,8 +403,8 @@ static const struct SPI_NAND_FLASH_INFO_T parallel_nand_flash_tables[] = {
 		.oob_size	= _SPI_NAND_OOB_SIZE_128BYTE,
 		.feature	= SPI_NAND_FLASH_FEATURE_NONE,
 		.ext_id		= 0x469500,
-		.timing_setting	= PARALLEL_NAND_FLASH_TIMING,
-		.min_ecc_req	= 4,
+		.timing_setting	= 0x44333,
+		.min_ecc_req	= 1,
 		.addr_cycle	= 5,
 		.soc_ecc_ability	= 4,
 	},
