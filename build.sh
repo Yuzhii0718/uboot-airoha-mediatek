@@ -38,9 +38,15 @@
 #                       without prompting (default: 1; mtmips/econet only)
 #   LOGS_DIR=<path>     Per-configuration logs and configurations
 #                       (default: build-logs)
-#   ATF_DIR=<path>      TF-A tree of the mediatek platform; its build/.config is
+#   MTK_ATF_DIR=<path>  TF-A tree of the mediatek platform; its build/.config is
 #                       copied next to the logs (default: ../atf-mtksoc, passed
-#                       through to mediatek.sh as well)
+#                       through to mediatek.sh as ATF_DIR).  A bare ATF_DIR is
+#                       still accepted as a fallback.
+#   AIROHA_ATF_DIR=<path>
+#                       ATF source tree of the airoha platform, passed through
+#                       to airoha.sh as ATF_DIR (default: ../atf-airoha); airoha
+#                       builds BL1/BL2/BL31 from it instead of using the
+#                       checked-in blobs
 #
 # Switches:
 #   -h, --help              Show this help
@@ -167,7 +173,18 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 UBOOT_DIR="${SCRIPT_DIR}"
 DEVICES_FILE="${DEVICES:-${UBOOT_DIR}/document/support-devices.md}"
 LOGS_DIR="${LOGS_DIR:-${UBOOT_DIR}/build-logs}"
-ATF_DIR="${ATF_DIR:-${UBOOT_DIR}/../atf-mtksoc}"
+MTK_ATF_DIR="${MTK_ATF_DIR:-${ATF_DIR:-${UBOOT_DIR}/../atf-mtksoc}}"
+AIROHA_ATF_DIR="${AIROHA_ATF_DIR:-${UBOOT_DIR}/../atf-airoha}"
+
+# The second repository is platform specific (mediatek reads atf-mtksoc, airoha
+# reads atf-airoha); the platform scripts all take their tree from ATF_DIR.
+second_repo_dir() {
+	case "$1" in
+		airoha)   echo "${AIROHA_ATF_DIR}" ;;
+		mediatek) echo "${MTK_ATF_DIR}" ;;
+		*)        echo "" ;;
+	esac
+}
 
 [ -f "${DEVICES_FILE}" ] || die "Device list not found: ${DEVICES_FILE}"
 
@@ -357,7 +374,8 @@ run_config() {
 	local script="${UBOOT_DIR}/${plat}.sh"
 	local label="${plat} ${soc} ${board}"
 	local log="${LOGS_DIR}/${plat}_${soc}_${board}.log"
-	local rc=0 t0 t1 secs arts cfg
+	local rc=0 t0 t1 secs arts cfg second_dir
+	second_dir=$(second_repo_dir "${plat}")
 
 	soc="${soc,,}"   # SOC is lowercase for every platform script
 
@@ -385,9 +403,13 @@ run_config() {
 	# Each configuration runs in its own subshell: the platform scripts cd
 	# around and export ARCH/STAGING_DIR/... which must not leak into the next
 	# one.  JOBS / TOOLCHAIN / STAGE / AUTO_DL / STAGING_DIR come from the
-	# environment, so they are simply inherited.
+	# environment, so they are simply inherited; the second-repository tree is
+	# handed over explicitly because its location differs per platform.
 	(
-		cd "${UBOOT_DIR}" &&
+		cd "${UBOOT_DIR}" || exit 1
+		if [ -n "${second_dir}" ]; then
+			export ATF_DIR="${second_dir}"
+		fi
 		SOC="${soc}" BOARD="${board}" "${script}"
 	) > "${log}" 2>&1 || rc=$?
 	t1=$(date +%s)
@@ -398,9 +420,9 @@ run_config() {
 	   [ "$(stat -c %Y "${UBOOT_DIR}/.config")" -ge "${t0}" ]; then
 		cp -f "${UBOOT_DIR}/.config" "${cfg}.config"
 	fi
-	if [ -f "${ATF_DIR}/build/.config" ] && \
-	   [ "$(stat -c %Y "${ATF_DIR}/build/.config")" -ge "${t0}" ]; then
-		cp -f "${ATF_DIR}/build/.config" "${cfg}-atf.config"
+	if [ -n "${second_dir}" ] && [ -f "${second_dir}/build/.config" ] && \
+	   [ "$(stat -c %Y "${second_dir}/build/.config")" -ge "${t0}" ]; then
+		cp -f "${second_dir}/build/.config" "${cfg}-atf.config"
 	fi
 
 	if [ "${rc}" -eq 0 ]; then

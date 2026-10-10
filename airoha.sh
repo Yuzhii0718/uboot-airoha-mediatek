@@ -6,7 +6,8 @@
 #
 # Airoha U-Boot standalone build script.
 # FIP image creation (BL2/BL31/U-Boot packing) is handled by U-Boot's
-# build system (make all).  This script only manages toolchain detection,
+# build system (make all).  This script manages toolchain detection, the
+# optional ATF source build (STAGE / ATF_DIR -> tools/build_airoha/source/),
 # build invocation, and output file collection.
 #
 # Required:
@@ -17,6 +18,17 @@
 #   TOOLCHAIN=<prefix>  Cross-compiler prefix (default: auto-detect by SOC)
 #   JOBS=<n>            Parallel make jobs (default: nproc)
 #   STAGING_DIR=<path>  Passed to make (default: empty)
+#   STAGE=<stage>       all (default) | uboot | atf
+#                         all   - compile the ATF blobs (when the source layout
+#                                 is selected), then U-Boot and the FIP images
+#                         uboot - U-Boot + FIP only; the ATF blobs must have
+#                                 been staged by an earlier STAGE=atf run
+#                         atf   - only compile ../atf-airoha and stage its
+#                                 artifacts under tools/build_airoha/source/
+#   ATF_DIR=<path>      ATF source tree (default: ../atf-airoha)
+#   BLOBS=<source|opensource|legacy|auto>
+#                       Blob source for this build; auto (default) keeps the
+#                       defconfig's CONFIG_AIROHA_BLOBS_* selection
 #
 # Toolchain auto-detection:
 #   en7523 / en7529 / en7562 / an7563  ->  arm-linux-gnueabi-        (ARMv7, 32-bit)
@@ -31,6 +43,12 @@
 #
 #   # Override toolchain:
 #   SOC=an7581 BOARD=evb TOOLCHAIN=aarch64-linux-musl- ./airoha.sh
+#
+#   # Build only the ATF blobs (after cloning ../atf-airoha):
+#   SOC=an7581 BOARD=evb STAGE=atf ./airoha.sh
+#
+#   # Build against the checked-in blobs instead of the ATF tree:
+#   SOC=an7581 BOARD=evb BLOBS=opensource ./airoha.sh
 #===============================================================================
 
 set -e
@@ -117,6 +135,30 @@ DEFCONFIG="${SOC}_${BOARD}_defconfig"
 DEFCONFIG_PATH="${UBOOT_DIR}/configs/${DEFCONFIG}"
 OUTPUT_PREFIX="${SOC}_${BOARD}"
 
+# ATF source tree and the blob staging directory it feeds (see
+# build_atf_source()): tools/build_airoha reads source/<variant>/ exactly like
+# it reads the checked-in opensource/<variant>/ and legacy/<variant>/ trees.
+# Resolve symlinks, because the ATF build.sh resolves its own relative paths
+# (it extracts its toolchains next to the tree) - ../atf-airoha is commonly a
+# symlink in this workspace, and following it keeps the existing toolchain and
+# build/ tree in use instead of extracting a second copy.
+ATF_DIR="${ATF_DIR:-${UBOOT_DIR}/../atf-airoha}"
+if command -v realpath >/dev/null 2>&1; then
+	ATF_DIR="$(realpath -m "${ATF_DIR}" 2>/dev/null || echo "${ATF_DIR}")"
+fi
+BLOBS_SOURCE_DIR="${UBOOT_DIR}/tools/build_airoha/source"
+STAGE="${STAGE:-all}"
+BLOBS="${BLOBS:-auto}"
+
+case "${STAGE}" in
+	all|uboot|atf)
+		;;
+	*)
+		error "Unsupported STAGE: ${STAGE} (use all, uboot or atf)"
+		exit 1
+		;;
+esac
+
 if [ -z "${JOBS}" ]; then
 	if command -v nproc &>/dev/null; then
 		JOBS=$(nproc)
@@ -162,6 +204,113 @@ copy_with_md5() {
 
 config_enabled() {
 	grep -q "^$1=y$" "${UBOOT_DIR}/.config"
+}
+
+# Read a string option out of .config, quotes stripped.
+config_str() {
+	sed -n "s/^$1=\"\(.*\)\"$/\1/p" "${UBOOT_DIR}/.config"
+}
+
+#------------------------------------------------------------------------------
+# Blob source resolution
+#
+# Mirrors the board/airoha/Kconfig choice:
+#   source     - built from the ATF tree by build_atf_source() (modern default)
+#   opensource - checked-in open-source blobs (deprecated)
+#   legacy     - vendor SDK blobs (legacy default)
+#------------------------------------------------------------------------------
+blob_source() {
+	if config_enabled CONFIG_AIROHA_BLOBS_SOURCE; then
+		echo "source"
+	elif config_enabled CONFIG_AIROHA_BLOBS_OPENSOURCE; then
+		echo "opensource"
+	else
+		echo "legacy"
+	fi
+}
+
+# Per-SoC subdirectory under tools/build_airoha/<base>/ the Makefile reads;
+# CONFIG_AIROHA_FIP_BLOBS_DIR overrides the default <soc>_default variant.
+blob_variant() {
+	local v
+	v=$(config_str CONFIG_AIROHA_FIP_BLOBS_DIR)
+	echo "${v:-${SOC}_default}"
+}
+
+# Map the resolved U-Boot SoC (CONFIG_SYS_SOC) to the atf-airoha build.sh SOC.
+#
+# Airoha names a bootloader platform after the whole SoC family, and one family
+# covers many package variants (include/soc/airoha/pkgids.h, airoha_pkg_from_id()):
+#
+#   EN7523 family   en7523 / en7529 / en7562           -> atf en7523
+#   EN7581 family   an7581 / an7566 / an7551           -> atf an7581
+#   AN7583 family   an7583 / an9510 / an7553 / an7567  -> atf an7583
+#   AN7552 family   an7552 / an7563                    -> atf an7552
+#
+# The variants already collapse before this runs: arch/arm/mach-airoha/Kconfig
+# gives CONFIG_SYS_SOC one default per TARGET_* symbol, so a variant board such
+# as EN7562 selects TARGET_EN7523 and arrives here as "en7523" - it builds the
+# EN7523 binaries.  AN7563 is the single family member that keeps its own name in
+# .config (TARGET_AN7563) while the ATF tree builds it from the AN7552 platform,
+# so it is the only translation needed.  The package ID read at runtime selects
+# the exact variant (see airoha_soc_name() in that header).
+atf_soc_for() {
+	case "$1" in
+		en7523|an7581|an7583) echo "$1" ;;      # family name == ATF platform name
+		an7563)               echo "an7552" ;;  # AN7563 is an AN7552 package variant
+		*)                    return 1 ;;
+	esac
+}
+
+# BLOBS=<source|opensource|legacy> forces the blob source for this build by
+# rewriting the choice in .config (auto keeps the defconfig's selection).  It is
+# the escape hatch for a tree without the ATF sources: use BLOBS=opensource.
+apply_blob_override() {
+	local want=""
+	case "${BLOBS}" in
+		auto|"")
+			return 0
+			;;
+		source)
+			want="CONFIG_AIROHA_BLOBS_SOURCE"
+			;;
+		opensource)
+			want="CONFIG_AIROHA_BLOBS_OPENSOURCE"
+			;;
+		legacy)
+			want="CONFIG_AIROHA_BLOBS_LEGACY"
+			;;
+		*)
+			error "Unsupported BLOBS value: ${BLOBS} (use source, opensource, legacy or auto)"
+			exit 1
+			;;
+	esac
+
+	info "Overriding blob source: ${BLOBS}"
+	sed -i \
+		-e '/^CONFIG_AIROHA_BLOBS_SOURCE=/d' \
+		-e '/^CONFIG_AIROHA_BLOBS_OPENSOURCE=/d' \
+		-e '/^CONFIG_AIROHA_BLOBS_LEGACY=/d' \
+		-e '/^# CONFIG_AIROHA_BLOBS_SOURCE is not set/d' \
+		-e '/^# CONFIG_AIROHA_BLOBS_OPENSOURCE is not set/d' \
+		-e '/^# CONFIG_AIROHA_BLOBS_LEGACY is not set/d' \
+		"${UBOOT_DIR}/.config"
+	echo "${want}=y" >> "${UBOOT_DIR}/.config"
+}
+
+# Pre-flight for the ATF source build, with the actionable way out.
+check_atf_tree() {
+	if [ ! -d "${ATF_DIR}" ]; then
+		error "ATF source tree not found: ${ATF_DIR}"
+		error "Clone it next to this tree, or set ATF_DIR=<path>."
+		error "To build against the checked-in blobs instead, re-run with BLOBS=opensource."
+		exit 1
+	fi
+	if [ ! -x "${ATF_DIR}/build.sh" ]; then
+		error "${ATF_DIR}/build.sh not found or not executable."
+		error "Is ${ATF_DIR} the atf-airoha source tree?"
+		exit 1
+	fi
 }
 
 get_bootext_prefix() {
@@ -228,12 +377,15 @@ check_environment() {
 	info "Python3: $(python3 --version 2>&1)"
 
 	# --- Cross Toolchain ---
-	if ! command -v "${TOOLCHAIN}gcc" &>/dev/null; then
-		error "Cross toolchain not found: ${TOOLCHAIN}gcc"
-		error "Please install the appropriate toolchain or set TOOLCHAIN=<prefix>"
-		exit 1
+	# STAGE=atf only compiles the ATF tree, which carries its own toolchains.
+	if [ "${STAGE}" != "atf" ]; then
+		if ! command -v "${TOOLCHAIN}gcc" &>/dev/null; then
+			error "Cross toolchain not found: ${TOOLCHAIN}gcc"
+			error "Please install the appropriate toolchain or set TOOLCHAIN=<prefix>"
+			exit 1
+		fi
+		info "Toolchain: $(${TOOLCHAIN}gcc --version | head -1)"
 	fi
-	info "Toolchain: $(${TOOLCHAIN}gcc --version | head -1)"
 
 	# --- Defconfig ---
 	if [ ! -f "${DEFCONFIG_PATH}" ]; then
@@ -241,6 +393,15 @@ check_environment() {
 		exit 1
 	fi
 	info "Defconfig: ${DEFCONFIG}"
+
+	# --- ATF source tree ---
+	# STAGE=atf builds it unconditionally.  For STAGE=all/uboot the selected
+	# blob source is only known after .config exists, so that case is
+	# pre-flighted in build_atf_source().
+	if [ "${STAGE}" = "atf" ]; then
+		info "ATF tree: ${ATF_DIR}"
+		check_atf_tree
+	fi
 
 	mkdir -p "${OUTPUT_DIR}"
 	info "Environment Check passed"
@@ -267,6 +428,9 @@ configure_uboot() {
 	else
 		echo 'CONFIG_SERIAL_RX_BUFFER_SIZE=256' >> "${UBOOT_DIR}/.config"
 	fi
+
+	apply_blob_override
+
 	make olddefconfig
 
 	info "U-Boot configured"
@@ -278,7 +442,7 @@ configure_uboot() {
 detect_build_features() {
 	step "Detect Build Features"
 
-	SOC_FAMILY=$(sed -n 's/^CONFIG_SYS_SOC="\(.*\)"$/\1/p' "${UBOOT_DIR}/.config")
+	SOC_FAMILY=$(config_str CONFIG_SYS_SOC)
 	[ -n "${SOC_FAMILY}" ] || SOC_FAMILY="${SOC}"
 
 	if config_enabled CONFIG_AIROHA_BUILD_MODERN; then
@@ -337,11 +501,31 @@ detect_build_features() {
         BUILD_TYPE="None (legacy)"
     fi
 
+	# Blob source, and for the source layout the ATF tree it will use.
+	BLOB_SOURCE=$(blob_source)
+	BLOB_VARIANT=$(blob_variant)
+	ATF_SOC=""
+	if [ "${BLOB_SOURCE}" = "source" ]; then
+		ATF_SOC=$(atf_soc_for "${SOC_FAMILY}") || ATF_SOC=""
+	fi
+
 	echo "SOC:                  ${SOC}"
+	echo "SOC family:           ${SOC_FAMILY}"
 	echo "BOARD:                ${BOARD}"
 	echo "Defconfig:            ${DEFCONFIG}"
 	echo "Toolchain:            ${TOOLCHAIN}"
 	echo "Build Type:           ${BUILD_TYPE}"
+	echo "Stage:                ${STAGE}"
+	echo "Blob source:          ${BLOB_SOURCE}"
+	if [ "${BLOB_SOURCE}" = "source" ]; then
+		if [ -n "${ATF_SOC}" ]; then
+			echo "ATF dir:              ${ATF_DIR}"
+			echo "ATF SOC:              ${ATF_SOC}"
+			echo "Blob staging:         ${BLOBS_SOURCE_DIR}/${BLOB_VARIANT}"
+		else
+			echo "ATF SOC:              <${SOC_FAMILY} has no ATF platform>"
+		fi
+	fi
 }
 
 #------------------------------------------------------------------------------
@@ -360,6 +544,72 @@ build_uboot() {
 		exit 1
 	fi
 	info "U-Boot build done: $(stat -c%s "${UBOOT_DIR}/u-boot.bin") bytes"
+}
+
+#------------------------------------------------------------------------------
+# Build ATF from source (CONFIG_AIROHA_BLOBS_SOURCE)
+#
+# Compiles ../atf-airoha (or ATF_DIR) and stages its artifacts where
+# tools/build_airoha expects the 'source' blob layout:
+#
+#   tools/build_airoha/source/<variant>/{bl2.bin,bl31.lzma[,bl1.bin]}
+#
+# The blobs must exist before the U-Boot 'make all' that packs the FIP, hence
+# this step runs before build_uboot().  Packaging itself stays in
+# tools/build_airoha - this only produces its inputs.
+#------------------------------------------------------------------------------
+build_atf_source() {
+	if [ "${STAGE}" = "atf" ] && [ "${BLOB_SOURCE}" != "source" ]; then
+		error "STAGE=atf needs the 'source' blob layout, but this build uses '${BLOB_SOURCE}'."
+		error "Re-run with BLOBS=source (or use a modern defconfig)."
+		exit 1
+	fi
+	[ "${BLOB_SOURCE}" = "source" ] || return 0
+
+	if [ -z "${ATF_SOC}" ]; then
+		error "No ATF source platform matches SOC=${SOC_FAMILY}."
+		error "atf-airoha build.sh builds en7523 / an7552 / an7581 / an7583;"
+		error "AN7563 is an AN7552 package variant and EN7562 an EN7523 one."
+		error "Build this board against the checked-in blobs instead: BLOBS=opensource"
+		exit 1
+	fi
+
+	step "Build ATF from source [${SOC_UPPER} -> ${ATF_SOC}]"
+	check_atf_tree
+
+	( cd "${ATF_DIR}" && SOC="${ATF_SOC}" ./build.sh all ) || {
+		error "ATF build failed (see the log above)."
+		exit 1
+	}
+
+	local src="${ATF_DIR}/output/${ATF_SOC}"
+	local bl2="${src}/${ATF_SOC}-bl2.bin"
+	local bl31="${src}/${ATF_SOC}-bl31.lzma"
+	local bl1="${src}/${ATF_SOC}-bl1.bin"
+
+	[ -f "${bl2}" ]  || { error "ATF did not generate BL2:  ${bl2}";  exit 1; }
+	[ -f "${bl31}" ] || { error "ATF did not generate BL31: ${bl31}"; exit 1; }
+
+	local dest="${BLOBS_SOURCE_DIR}/${BLOB_VARIANT}"
+	mkdir -p "${dest}"
+	# Clear the previous contents first so a failed build can never leave a
+	# stale blob of another SoC behind.
+	rm -f "${dest}/bl2.bin" "${dest}/bl31.lzma" "${dest}/bl1.bin"
+
+	cp -f "${bl2}"  "${dest}/bl2.bin"
+	cp -f "${bl31}" "${dest}/bl31.lzma"
+	# BL1 only exists on the EN7523 ATF platform.
+	if [ -f "${bl1}" ]; then
+		cp -f "${bl1}" "${dest}/bl1.bin"
+	fi
+
+	info "Staged ATF blobs in ${dest}/"
+	local f size
+	for f in bl2.bin bl31.lzma bl1.bin; do
+		[ -f "${dest}/${f}" ] || continue
+		size=$(stat -c%s "${dest}/${f}")
+		printf "    %-12s %10s bytes\n" "${f}" "${size}"
+	done
 }
 
 #------------------------------------------------------------------------------
@@ -499,6 +749,13 @@ print_summary() {
 		done
 	fi
 
+	if [ "${STAGE}" = "atf" ]; then
+		echo ""
+		echo "  Note: STAGE=atf, only the ATF source blobs were produced:"
+		echo "        ${BLOBS_SOURCE_DIR}/${BLOB_VARIANT}/"
+		echo "        Re-run without STAGE=atf to build U-Boot and the FIP images."
+	fi
+
 	echo ""
 	echo "==========================================================================="
 }
@@ -514,13 +771,26 @@ main() {
 	echo "  Source:   ${UBOOT_DIR}"
 	echo "  Defconfig: ${DEFCONFIG}"
 	echo "  Output:   ${OUTPUT_DIR}"
+	if [ "${STAGE}" != "all" ]; then
+		echo "  Stage:    ${STAGE}"
+	fi
 	echo "==========================================================================="
 
 	check_environment
 	configure_uboot
 	detect_build_features
-	build_uboot
-	copy_outputs
+
+	# STAGE=uboot reuses the blobs staged by an earlier run.  Otherwise the
+	# ATF source (when selected) is compiled here, before build_uboot(), so the
+	# FIP packing step in tools/build_airoha finds the blobs.
+	if [ "${STAGE}" != "uboot" ]; then
+		build_atf_source
+	fi
+
+	if [ "${STAGE}" != "atf" ]; then
+		build_uboot
+		copy_outputs
+	fi
 
 	print_summary
 }
