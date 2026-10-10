@@ -29,7 +29,10 @@
 			var url = mode === 'failsafe' ? '/reboot-failsafe' :
 				mode === 'boot' ? '/boot' : '/reboot';
 
-			if (!confirm(t(confirmKey)))
+			/* In a RAM (console recovery) session rebooting is the
+			 * action that bricks the device, so the warning is
+			 * repeated here; see rebootWarningPrefix() in main.js. */
+			if (!confirm(rebootWarningPrefix() + t(confirmKey)))
 				return;
 
 			if (btnNormal) btnNormal.disabled = true;

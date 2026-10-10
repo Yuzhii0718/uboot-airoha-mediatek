@@ -942,6 +942,276 @@ function closeHelpModal() {
     document.removeEventListener("keydown", handleHelpModalKey);
 }
 
+/*
+ * RAM (XMODEM recovery) session warning.
+ *
+ * A bootloader that was fetched over the console by the previous boot stage
+ * runs from DRAM only: see common/boot_mode.c and the "boot" field of
+ * GET /sysinfo.  Nothing the user uploads through this UI reaches the flash
+ * until it is written explicitly, so uploading only a firmware image - or
+ * simply rebooting - leaves the device with a missing or mismatched
+ * bootloader, which is exactly how a device bricks.
+ *
+ * GET /sysinfo reports three states: "ram", "flash" and "unknown".  Only
+ * "ram" warns; a platform or a boot chain that cannot report the mode must
+ * never produce a false alarm.
+ *
+ * Two things are shown: a banner on every page (a dismissed modal is too
+ * easy to forget) and, on the entry page, a modal that cannot be missed.
+ * The modal is remembered for the browser session, so moving between the
+ * pages does not keep it in the way, while the banner stays.
+ */
+const BOOTMODE_MODAL_KEY = "failsafe_ram_modal_shown";
+
+/* Bootloader pages of the builds this UI is used with, in the order they
+ * belong together: a FIP layout needs the preloader (bl2) and the FIP
+ * (bl31 + U-Boot) both, so the warning has to offer both instead of hiding
+ * one behind the other.  The ids are the ones GET /ui/pages reports (see
+ * failsafe/pages.c). */
+const BOOTMODE_PAGE_ORDER = ["bl2", "fip", "uboot", "chainloader"];
+
+function bootModeFromSysInfo() {
+    return APP_STATE.sysinfo?.boot?.mode || "unknown";
+}
+
+function bootModeIsRam() {
+    return bootModeFromSysInfo() === "ram";
+}
+
+/*
+ * Bootloader pages this firmware really has, empty while the page list is
+ * not known yet (it arrives with GET /ui/pages; applyPageList() re-runs the
+ * warning when it shows up).
+ */
+function bootModeBootloaderPages() {
+    const pages = readKnownPages();
+
+    if (!Array.isArray(pages)) return [];
+
+    return BOOTMODE_PAGE_ORDER.filter(function (pageId) {
+        return pages.includes(pageId);
+    });
+}
+
+/* One action per bootloader page of this build. */
+function bootModeActionNodes(className) {
+    return bootModeBootloaderPages().map(function (pageId) {
+        const link = document.createElement("a");
+
+        link.className = className;
+        link.href = "/" + pageId + ".html";
+        link.setAttribute("data-i18n", "ram.goto." + pageId);
+        link.textContent = t("ram.goto." + pageId, pageId);
+
+        return link;
+    });
+}
+
+/* Label already translated by the caller: every node is tagged with its i18n
+ * key so a language switch re-renders it through applyI18n(). */
+function bootModeTextNode(tagName, className, key, fallback) {
+    const node = document.createElement(tagName);
+
+    node.className = className;
+    node.setAttribute("data-i18n", key);
+    node.textContent = t(key, fallback);
+
+    return node;
+}
+
+function ensureBootModeBanner() {
+    const main = document.querySelector(".main");
+    let banner = document.getElementById("bootmode_banner");
+    let actions;
+
+    if (!main) return null;
+
+    if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "bootmode_banner";
+        banner.className = "bootmode-banner";
+        banner.setAttribute("role", "alert");
+        banner.appendChild(bootModeTextNode("span", "bootmode-banner-tag",
+            "ram.badge", "RAM"));
+        banner.appendChild(bootModeTextNode("span", "bootmode-banner-text",
+            "ram.banner", ""));
+
+        actions = document.createElement("span");
+        actions.id = "bootmode_banner_actions";
+        actions.className = "bootmode-banner-actions";
+        banner.appendChild(actions);
+
+        main.insertBefore(banner, main.firstChild);
+    } else {
+        actions = document.getElementById("bootmode_banner_actions");
+    }
+
+    /* Rebuilt on every call: the bootloader actions follow the page list,
+     * which may only arrive with GET /ui/pages (see applyPageList). */
+    while (actions.firstChild) actions.removeChild(actions.firstChild);
+
+    for (const action of bootModeActionNodes("bootmode-banner-link"))
+        actions.appendChild(action);
+
+    applyI18n(banner);
+
+    return banner;
+}
+
+function removeBootModeBanner() {
+    const banner = document.getElementById("bootmode_banner");
+
+    if (banner) banner.remove();
+}
+
+function ensureBootModeModal() {
+    let backdrop = document.getElementById("bootmode_modal_backdrop");
+
+    if (backdrop) return backdrop;
+
+    backdrop = document.createElement("div");
+    backdrop.id = "bootmode_modal_backdrop";
+    backdrop.className = "help-modal-backdrop";
+
+    /* Same shell as the help modal (see ensureHelpModal), flagged as a
+     * warning so it does not read as informational. */
+    const modal = document.createElement("div");
+    modal.className = "help-modal help-modal-warn";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-labelledby", "bootmode_modal_title");
+
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "help-modal-close";
+    closeButton.setAttribute("aria-label", t("common.close", "Close"));
+    closeButton.innerHTML = "&times;";
+    closeButton.addEventListener("click", closeBootModeModal);
+    modal.appendChild(closeButton);
+
+    const header = document.createElement("div");
+    header.className = "help-modal-header";
+
+    const titles = document.createElement("div");
+    titles.appendChild(bootModeTextNode("h2", "help-modal-title",
+        "ram.title", ""));
+    titles.querySelector("h2").id = "bootmode_modal_title";
+    titles.appendChild(bootModeTextNode("p", "help-modal-subtitle",
+        "ram.subtitle", ""));
+    header.appendChild(titles);
+    modal.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "help-modal-body";
+
+    const intro = document.createElement("p");
+    intro.className = "help-modal-intro";
+    intro.setAttribute("data-i18n-html", "ram.body");
+    intro.innerHTML = t("ram.body", "");
+    body.appendChild(intro);
+
+    const actions = document.createElement("div");
+    actions.className = "bootmode-modal-actions";
+    body.appendChild(actions);
+
+    buildBootModeModalActions(actions);
+
+    modal.appendChild(body);
+    backdrop.appendChild(modal);
+
+    backdrop.addEventListener("click", (event) => {
+        if (event.target === backdrop) closeBootModeModal();
+    });
+
+    document.body.appendChild(backdrop);
+
+    return backdrop;
+}
+
+/*
+ * (Re)build the modal actions: one link per bootloader page of this build
+ * plus the dismiss button.  Rebuilt whenever the page list changes, so a
+ * FIP layout ends up offering the preloader next to the FIP.
+ */
+function buildBootModeModalActions(container) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+
+    for (const action of bootModeActionNodes("button button-warn"))
+        container.appendChild(action);
+
+    const dismiss = bootModeTextNode("button", "button", "ram.dismiss", "");
+
+    dismiss.type = "button";
+    dismiss.addEventListener("click", closeBootModeModal);
+    container.appendChild(dismiss);
+}
+
+function handleBootModeModalKey(event) {
+    if (event.key === "Escape") closeBootModeModal();
+}
+
+function bootModeModalShown() {
+    try {
+        return sessionStorage.getItem(BOOTMODE_MODAL_KEY) === "1";
+    } catch {
+        return false;
+    }
+}
+
+function openBootModeModal() {
+    const backdrop = ensureBootModeModal();
+
+    applyI18n(backdrop);
+    backdrop.classList.add("is-open");
+    document.addEventListener("keydown", handleBootModeModalKey);
+
+    try {
+        sessionStorage.setItem(BOOTMODE_MODAL_KEY, "1");
+    } catch { /* ignore */ }
+}
+
+function closeBootModeModal() {
+    const backdrop = document.getElementById("bootmode_modal_backdrop");
+
+    if (backdrop) backdrop.classList.remove("is-open");
+    document.removeEventListener("keydown", handleBootModeModalKey);
+}
+
+/*
+ * Entry point: called whenever a boot mode becomes known (the /sysinfo
+ * answer, which each page load fetches) and after a language switch, so both
+ * the banner and the modal follow the report and stay translated.
+ */
+function applyBootModeWarning() {
+    if (!bootModeIsRam()) {
+        removeBootModeBanner();
+        closeBootModeModal();
+        return;
+    }
+
+    ensureBootModeBanner();
+
+    /* Keep a modal that already exists in step with the page list, also
+     * when it is not (or no longer) opened by this call. */
+    const backdrop = document.getElementById("bootmode_modal_backdrop");
+    const actions = backdrop?.querySelector(".bootmode-modal-actions");
+
+    if (actions) buildBootModeModalActions(actions);
+
+    /* The prominent modal belongs to the entry page of the UI. */
+    if (APP_STATE.page !== "index" || bootModeModalShown()) return;
+
+    openBootModeModal();
+}
+
+/*
+ * Heading of the confirmation on the reboot page: reboot is the action that
+ * turns a RAM session into a brick, so it is called out there too.
+ */
+function rebootWarningPrefix() {
+    return bootModeIsRam() ? t("ram.reboot_confirm", "") : "";
+}
+
 const SIDEBAR_SCROLL_KEY = "failsafe_sidebar_scroll";
 
 function readSidebarScroll() {
@@ -1281,6 +1551,10 @@ function applyPageList(pages) {
 
         if (navId) setNavVisible(navId, pages.includes(navId));
     }
+
+    /* The RAM warning points at the bootloader pages of this build, which
+     * are only known once this list is (see bootModeBootloaderPages). */
+    applyBootModeWarning();
 }
 
 /**
@@ -1577,6 +1851,9 @@ function getSysInfo() {
             }
             updateFipMaxSizeLabels();
             if (sysinfoElement) renderSysInfo();
+            /* A RAM (console recovery) session is warned about on every
+             * page; see applyBootModeWarning(). */
+            applyBootModeWarning();
         },
     });
 }

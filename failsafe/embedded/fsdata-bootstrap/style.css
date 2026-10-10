@@ -2555,3 +2555,90 @@ body[data-page="settings"] .upload-hero {
     text-decoration: underline;
     outline: none;
 }
+
+/* ── RAM (console recovery) session warning ────────────────────── */
+/*
+ * Shown while the bootloader runs from DRAM only, i.e. nothing has been
+ * written to the flash yet (see applyBootModeWarning() in main.js).  The
+ * banner stays on every page, the modal shell is the help one, flagged as a
+ * warning.
+ */
+.bootmode-banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-sm);
+    padding: var(--sp-sm) var(--sp-md);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--radius);
+    background: var(--warn-bg);
+    color: var(--text);
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.bootmode-banner-tag {
+    flex: none;
+    padding: 2px 8px;
+    border: 1px solid var(--err-border);
+    border-radius: var(--radius-xs);
+    background: var(--err-bg);
+    color: var(--danger);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.bootmode-banner-text {
+    flex: 1 1 16rem;
+}
+
+/* One link per bootloader page (a FIP layout needs the preloader and the
+ * FIP both), pushed to the end of the banner. */
+.bootmode-banner-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-sm);
+    margin-left: auto;
+}
+
+.bootmode-banner-link {
+    flex: none;
+    color: var(--danger);
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.bootmode-banner-link:hover,
+.bootmode-banner-link:focus-visible {
+    text-decoration: underline;
+    outline: none;
+}
+
+.help-modal.help-modal-warn {
+    border-color: var(--warn-border);
+}
+
+.help-modal.help-modal-warn .help-modal-title {
+    color: var(--danger);
+}
+
+.bootmode-modal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-sm);
+    margin-top: var(--sp-md);
+}
+
+/* The bootloader action is an <a>, so it needs the button look back. */
+.bootmode-modal-actions .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
