@@ -265,7 +265,8 @@ jobs:
           # Passed through by build.sh to the platform scripts:
           AUTO_DL: '1'                                    # download missing toolchains (mtmips/econet)
           STAGE: 'all'                                    # full flashable images, not just u-boot.bin
-          ATF_DIR: ${{ github.workspace }}/../atf-mtksoc
+          MTK_ATF_DIR: ${{ github.workspace }}/../atf-mtksoc
+          AIROHA_ATF_DIR: ${{ github.workspace }}/../atf-airoha
           DRAMC_DIR: ${{ github.workspace }}/../airoha_mips_dramc
           LOGS_DIR: ${{ github.workspace }}/build-logs
         run: |

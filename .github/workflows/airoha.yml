@@ -1,5 +1,11 @@
 name: Airoha Build and Release
 
+# The Airoha boot chain is split over two trees: this repository builds U-Boot
+# and packs the FIP images, while BL1/BL2/BL31 are built from the atf-airoha
+# tree, checked out as a sibling of the workspace.  airoha.sh drives both and
+# stages the bootloader artifacts under tools/build_airoha/source/ before
+# tools/build_airoha packs preloader.bin / bl31-uboot.fip.
+
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +16,11 @@ on:
         type: choice
         options:
           - v2026.10
+      atf_ref:
+        description: 'Branch/ref of atf-airoha to build the bootloader from'
+        required: true
+        default: atf-v2.10
+        type: string
       SOC:
         description: 'SOC type (e.g., en7523/an7563/an7581/an7583)'
         required: true
@@ -42,8 +53,8 @@ jobs:
           sudo apt-get install -y \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             build-essential flex bison libssl-dev \
-            device-tree-compiler qemu-user-static \
-            lzma lzma-dev \
+            device-tree-compiler python-is-python3 qemu-user-static \
+            lzma lzma-dev unzip xz-utils \
             nodejs npm
 
       # 2. Show the effective ref/commit this run will use (for diagnostics)
@@ -66,6 +77,34 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch || github.ref }}
+
+      # 3b. Checkout the ATF bootloader tree and put it where airoha.sh expects
+      #     it: as a *sibling* of the U-Boot tree (../atf-airoha).  The action
+      #     refuses a path outside the workspace ("Repository path ... is not
+      #     under ..."), so it is checked out to ./atf-airoha and moved one level
+      #     up afterwards.
+      #     This is not cosmetic: the U-Boot tree *is* the workspace, and its
+      #     `make clean` deletes every '*.[aios]' file found below the tree, so a
+      #     nested ATF tree would have its prebuilt DRAM objects wiped.
+      - name: Checkout atf-airoha
+        uses: actions/checkout@v4
+        with:
+          repository: Yuzhii0718/atf-airoha
+          ref: ${{ inputs.atf_ref }}
+          path: atf-airoha
+
+      - name: Move the ATF tree next to the U-Boot tree
+        run: mv "${GITHUB_WORKSPACE}/atf-airoha" "${GITHUB_WORKSPACE}/../atf-airoha"
+
+      # 3c. Cache the ATF host archives: atf-airoha/build.sh fetches the AArch32
+      #     toolchain and mbedTLS into dl/ when they are missing (~150 MiB
+      #     together), so keep them between runs.  The extracted toolchain is
+      #     still unpacked once per run; only the download is avoided.
+      - name: Cache the ATF host archives
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../atf-airoha/dl
+          key: atf-airoha-dl-${{ runner.os }}-${{ inputs.atf_ref }}
 
       # 4. Collect build metadata (U-Boot version, branch, commit hash, build time)
       - name: Generate build info
@@ -94,6 +133,13 @@ jobs:
           COMMIT_SHORT="${COMMIT:0:7}"
           BUILD_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 
+          # The ATF tree lives next to the workspace (step 3b) and the bootloader
+          # images are built from it, so its commit is recorded as well.
+          ATF_DIR="$(cd "${GITHUB_WORKSPACE}/../atf-airoha" && pwd)"
+          ATF_BRANCH="$(git -C "${ATF_DIR}" rev-parse --abbrev-ref HEAD)"
+          ATF_COMMIT="$(git -C "${ATF_DIR}" rev-parse HEAD)"
+          ATF_COMMIT_SHORT="${ATF_COMMIT:0:7}"
+
           {
             echo "Airoha U-Boot Build Information"
             echo "==============================="
@@ -102,6 +148,9 @@ jobs:
             echo "Repository     : ${GITHUB_REPOSITORY}"
             echo "Branch         : ${BRANCH}"
             echo "Commit         : ${COMMIT_SHORT} (${COMMIT})"
+            echo "ATF Repository : Yuzhii0718/atf-airoha"
+            echo "ATF Branch     : ${ATF_BRANCH}"
+            echo "ATF Commit     : ${ATF_COMMIT_SHORT} (${ATF_COMMIT})"
             echo "Build Time     : ${BUILD_TIME}"
             echo "SOC            : ${{ inputs.SOC }}"
             echo "BOARD          : ${{ inputs.BOARD }}"
@@ -109,20 +158,27 @@ jobs:
           cat output_airoha/build-info.txt
 
           # Persist the metadata for later steps (release notes)
-          echo "UBOOT_VERSION=${UBOOT_VERSION}" >> "$GITHUB_ENV"
-          echo "BRANCH=${BRANCH}"               >> "$GITHUB_ENV"
-          echo "COMMIT=${COMMIT}"               >> "$GITHUB_ENV"
-          echo "COMMIT_SHORT=${COMMIT_SHORT}"   >> "$GITHUB_ENV"
-          echo "BUILD_TIME=${BUILD_TIME}"       >> "$GITHUB_ENV"
+          echo "UBOOT_VERSION=${UBOOT_VERSION}"           >> "$GITHUB_ENV"
+          echo "BRANCH=${BRANCH}"                         >> "$GITHUB_ENV"
+          echo "COMMIT=${COMMIT}"                         >> "$GITHUB_ENV"
+          echo "COMMIT_SHORT=${COMMIT_SHORT}"             >> "$GITHUB_ENV"
+          echo "ATF_BRANCH=${ATF_BRANCH}"                 >> "$GITHUB_ENV"
+          echo "ATF_COMMIT=${ATF_COMMIT}"                 >> "$GITHUB_ENV"
+          echo "ATF_COMMIT_SHORT=${ATF_COMMIT_SHORT}"     >> "$GITHUB_ENV"
+          echo "BUILD_TIME=${BUILD_TIME}"                 >> "$GITHUB_ENV"
 
       # 5. Execute the build script with the provided SOC and BOARD inputs,
-      #    and capture the full build log into the output directory.
+      #    and capture the full build log into the output directory.  airoha.sh
+      #    compiles the bootloader from the ATF tree checked out in step 3b and
+      #    stages it under tools/build_airoha/source/ before the FIP images are
+      #    packed (the modern blob layout builds from source by default).
       - name: Run build script
         run: |
           set -o pipefail
           chmod +x airoha.sh
           LOG_FILE="output_airoha/build.log"
-          SOC=${{ inputs.SOC }} BOARD=${{ inputs.BOARD }} ./airoha.sh 2>&1 | tee "${LOG_FILE}"
+          ATF_DIR="${GITHUB_WORKSPACE}/../atf-airoha" \
+            SOC=${{ inputs.SOC }} BOARD=${{ inputs.BOARD }} ./airoha.sh 2>&1 | tee "${LOG_FILE}"
           cp .config output_airoha/.config
 
       # 6. Upload the build artifacts (firmware + build-info.txt + build.log)
@@ -160,6 +216,7 @@ jobs:
           - **Repository**: ${GITHUB_REPOSITORY}
           - **Ref**: \`${{ inputs.branch }}\`
           - **Branch / commit**: ${BRANCH} / \`${COMMIT_SHORT}\`
+          - **ATF branch / commit**: ${ATF_BRANCH} / \`${ATF_COMMIT_SHORT}\`
           - **Build time**: ${BUILD_TIME}
           - **SOC / BOARD**: ${{ inputs.SOC }} / ${{ inputs.BOARD }}
           EOF
