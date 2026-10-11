@@ -20,8 +20,10 @@ config RNG_AIROHA
 	depends on ARCH_AIROHA
 	help
 	  Enable support for the True Random Number Generator (TRNG) found
-	  on Airoha EN7523/AN7563/AN7581 SoCs (raw entropy output)
-	  and on Airoha AN7583 SoCs (DRBG output).
+	  on the Airoha SoCs: EN7523/AN7563/AN7581 use
+	  the raw entropy output, AN7583 uses the DRBG output. On the ARMv7
+	  SoCs the module clock is gated out of reset and has to be enabled
+	  before the first register access.
 
 config RNG_MESON
 	bool "Amlogic Meson Random Number Generator support"

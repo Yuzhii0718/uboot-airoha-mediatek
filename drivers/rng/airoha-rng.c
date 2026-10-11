@@ -16,10 +16,13 @@
 
 #include <dm.h>
 #include <rng.h>
+#include <regmap.h>
 #include <dm/device_compat.h>
+#include <soc/airoha/scu-regmap.h>
 #include <asm/io.h>
 #include <linux/bitfield.h>
 #include <linux/bitops.h>
+#include <linux/err.h>
 #include <linux/iopoll.h>
 #include <linux/string.h>
 
@@ -29,6 +32,13 @@
 #define TRNG_NS_SEK_AND_DAT_EN		0x804
 #define   RNG_EN			BIT(31)
 #define   RAW_DATA_EN			BIT(16)
+/*
+ * The SDK writes RAW_HW_INIT (0x80010002) / DRBG_HW_INIT (0x80000002), which
+ * also set BIT(1). That bit is set out of reset and is preserved by the
+ * read-modify-write below, so the value read back matches the SDK one even
+ * though the bit is not set here (A/B tested on AN7581 and AN7583: setting it
+ * or not changes nothing, upstream leaves it alone as well).
+ */
 #define TRNG_HEALTH_TEST_SW_RST		0x808
 #define   SW_RST			BIT(0) /* Active High */
 #define TRNG_INTR_EN			0x818
@@ -61,6 +71,59 @@
 enum airoha_trng_path {
 	TRNG_PATH_RAW = 0,
 	TRNG_PATH_DRBG,
+};
+
+/* One module clock gate of the TRNG in the chip SCU */
+struct airoha_trng_gate {
+	u16 reg;
+	u8 bit;
+};
+
+struct airoha_trng_data {
+	enum airoha_trng_path path;
+	const struct airoha_trng_gate *gates;
+	size_t n_gates;
+};
+
+/*
+ * On the ARMv7 SoCs the TRNG module clock is left gated out of reset, so the
+ * gates below must be opened before the first register access: accessing the
+ * TRNG while it is gated hangs the SoC. These are the registers the vendor
+ * opens in scu_Enable_Module_Clock() (NP bus domain gate bit 3, the two NP
+ * peripheral domain gates bit 21 and bit 0), with the SoC specific offsets
+ * from the vendor ecnt_scu.h.
+ */
+static const struct airoha_trng_gate en7523_trng_gates[] = {
+	{ 0x1e4, 3 },	/* CR_CHIP_SCU_NP_BUS_DOM_CLK_GAT */
+	{ 0x1e8, 21 },	/* CR_CHIP_SCU_NP_PER_DOM_CLK_GAT_1 */
+	{ 0x1ec, 0 },	/* CR_CHIP_SCU_NP_PER_DOM_CLK_GAT_2 */
+};
+
+/* AN7563 follows the EN7581 chip SCU register layout */
+static const struct airoha_trng_gate an7563_trng_gates[] = {
+	{ 0x1e4, 3 },
+	{ 0x1ec, 21 },
+	{ 0x200, 0 },
+};
+
+static const struct airoha_trng_data en7523_trng_data = {
+	.path = TRNG_PATH_RAW,
+	.gates = en7523_trng_gates,
+	.n_gates = ARRAY_SIZE(en7523_trng_gates),
+};
+
+static const struct airoha_trng_data en7581_trng_data = {
+	.path = TRNG_PATH_RAW,
+};
+
+static const struct airoha_trng_data an7563_trng_data = {
+	.path = TRNG_PATH_RAW,
+	.gates = an7563_trng_gates,
+	.n_gates = ARRAY_SIZE(an7563_trng_gates),
+};
+
+static const struct airoha_trng_data an7583_trng_data = {
+	.path = TRNG_PATH_DRBG,
 };
 
 struct airoha_trng {
@@ -140,7 +203,7 @@ static int airoha_trng_probe_raw(struct udevice *dev)
 	u32 val;
 	int ret;
 
-	/* 0x80010002: select the noise source, enable raw data and oscillator */
+	/* 0x80010000: enable the raw data output and the ring oscillator */
 	val = readl(trng->base + TRNG_NS_SEK_AND_DAT_EN);
 	val |= RAW_DATA_EN | RNG_EN;
 	writel(val, trng->base + TRNG_NS_SEK_AND_DAT_EN);
@@ -181,8 +244,8 @@ static int airoha_trng_probe_drbg(struct udevice *dev)
 	int ret;
 
 	/*
-	 * 0x80000002: select the noise source and enable the oscillator;
-	 * the DRBG output is used instead of the raw one.
+	 * 0x80000000: enable the ring oscillator only; the DRBG output is
+	 * used instead of the raw one.
 	 */
 	val = readl(trng->base + TRNG_NS_SEK_AND_DAT_EN);
 	val |= RNG_EN;
@@ -198,16 +261,57 @@ static int airoha_trng_probe_drbg(struct udevice *dev)
 	return 0;
 }
 
+static int airoha_trng_ungate(struct udevice *dev,
+			      const struct airoha_trng_data *data)
+{
+	struct regmap *map;
+	size_t i;
+	int ret;
+
+	if (!data->n_gates)
+		return 0;
+
+	map = airoha_get_chip_scu_regmap();
+	if (IS_ERR(map)) {
+		dev_err(dev, "failed to get the chip SCU: %ld\n", PTR_ERR(map));
+		return PTR_ERR(map);
+	}
+
+	/*
+	 * The TRNG does not answer any register access while its module clock
+	 * is gated, so the gates have to be open before the TRNG is touched.
+	 */
+	for (i = 0; i < data->n_gates; i++) {
+		ret = regmap_update_bits(map, data->gates[i].reg,
+					 BIT(data->gates[i].bit),
+					 BIT(data->gates[i].bit));
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
 static int airoha_trng_probe(struct udevice *dev)
 {
+	const struct airoha_trng_data *data;
 	struct airoha_trng *trng = dev_get_priv(dev);
 	u32 val;
+	int ret;
+
+	data = (const struct airoha_trng_data *)dev_get_driver_data(dev);
+	if (!data)
+		return -EINVAL;
+
+	trng->path = data->path;
+
+	ret = airoha_trng_ungate(dev, data);
+	if (ret)
+		return ret;
 
 	trng->base = dev_read_addr_ptr(dev);
 	if (!trng->base)
 		return -EINVAL;
-
-	trng->path = dev_get_driver_data(dev);
 
 	/* No interrupts in U-Boot: keep the TRNG one masked and poll instead */
 	val = readl(trng->base + TRNG_INTR_EN);
@@ -227,8 +331,10 @@ static const struct dm_rng_ops airoha_trng_ops = {
 };
 
 static const struct udevice_id airoha_trng_match[] = {
-	{ .compatible = "airoha,en7581-trng", .data = TRNG_PATH_RAW },
-	{ .compatible = "airoha,an7583-trng", .data = TRNG_PATH_DRBG },
+	{ .compatible = "airoha,en7523-trng", .data = (ulong)&en7523_trng_data },
+	{ .compatible = "airoha,en7581-trng", .data = (ulong)&en7581_trng_data },
+	{ .compatible = "airoha,an7563-trng", .data = (ulong)&an7563_trng_data },
+	{ .compatible = "airoha,an7583-trng", .data = (ulong)&an7583_trng_data },
 	{ }
 };
 
