@@ -465,6 +465,12 @@
 			status = "disabled";
 		};
 
+		rng@1faa1000 {
+			compatible = "airoha,an7583-trng";
+			reg = <0x0 0x1faa1000 0x0 0xc04>;
+			interrupts = <GIC_SPI 35 IRQ_TYPE_LEVEL_HIGH>;
+		};
+
 		usb0: usb@1fab0000 {
 			compatible = "mediatek,mtk-xhci";
 			reg = <0x0 0x1fab0000 0x0 0x3e00>,
